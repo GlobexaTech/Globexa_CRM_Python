@@ -1,0 +1,291 @@
+# Globexa CRM Configuration
+# Copy to config.local.yaml for local overrides (gitignored)
+
+app:
+  name: "Globexa CRM"
+  version: "0.1.0"
+  environment: "development"  # development, staging, production
+  debug: true
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
+
+database:
+  host: "localhost"
+  port: 5432
+  username: "postgres"
+  password: "postgres"
+  name: "globexa_crm"
+  pool_size: 10
+  max_overflow: 20
+  pool_timeout: 30
+  pool_recycle: 3600
+  echo: false
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 50
+
+firecrawl:
+  api_key: ""
+
+security:
+  secret_key: "CHANGE_ME_IN_PRODUCTION_USE_STRONG_RANDOM_KEY"
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+  refresh_token_expire_days: 30
+  password_min_length: 8
+  bcrypt_rounds: 12
+
+google_oauth:
+  client_id: ""
+  client_secret: ""
+  redirect_uri: "http://localhost:8000/api/v1/auth/google/callback"
+  scopes:
+    - "openid"
+    - "email"
+    - "profile"
+
+ai_router:
+  # Local Ollama configuration
+  local:
+    enabled: true
+    base_url: "http://localhost:11434"
+    default_model: "llama3.2:3b"
+    timeout_seconds: 60
+    # Tasks suitable for local models
+    suitable_tasks:
+      - "classification"
+      - "simple_scoring"
+      - "extraction"
+      - "summarization"
+      - "intent_identification"
+      - "tagging"
+      - "routing_decision"
+
+  # Cloud providers (NVIDIA NIM, OpenAI, etc.)
+  cloud:
+    default_provider: "nvidia"
+    providers:
+      nvidia:
+        enabled: true
+        api_key_env: "NVIDIA_API_KEY"
+        base_url: "https://integrate.api.nvidia.com/v1"
+        models:
+          - "nvidia/nemotron-3-ultra"
+          - "meta/llama-3.1-70b-instruct"
+          - "mistralai/mistral-large"
+        default_model: "nvidia/nemotron-3-ultra"
+      openai:
+        enabled: false
+        api_key_env: "OPENAI_API_KEY"
+        base_url: "https://api.openai.com/v1"
+        models:
+          - "gpt-4o"
+          - "gpt-4o-mini"
+          - "gpt-4-turbo"
+        default_model: "gpt-4o-mini"
+      anthropic:
+        enabled: false
+        api_key_env: "ANTHROPIC_API_KEY"
+        base_url: "https://api.anthropic.com/v1"
+        models:
+          - "claude-3-5-sonnet-20241022"
+          - "claude-3-5-haiku-20241022"
+        default_model: "claude-3-5-haiku-20241022"
+      google:
+        enabled: false
+        api_key_env: "GOOGLE_API_KEY"
+        base_url: "https://generativelanguage.googleapis.com/v1beta"
+        models:
+          - "gemini-1.5-pro"
+          - "gemini-1.5-flash"
+        default_model: "gemini-1.5-flash"
+
+  # Usage ledger
+  usage_ledger:
+    enabled: true
+    log_level: "INFO"
+
+email:
+  # Provider abstraction - supports multiple providers per tenant
+  default_provider: "resend"
+  providers:
+    resend:
+      enabled: true
+      api_key_env: "RESEND_API_KEY"
+      webhook_secret_env: "RESEND_WEBHOOK_SECRET"
+    gmail:
+      enabled: false
+      client_id_env: "GMAIL_CLIENT_ID"
+      client_secret_env: "GMAIL_CLIENT_SECRET"
+    microsoft:
+      enabled: false
+      client_id_env: "MS_GRAPH_CLIENT_ID"
+      client_secret_env: "MS_GRAPH_CLIENT_SECRET"
+      tenant_id_env: "MS_GRAPH_TENANT_ID"
+    smtp:
+      enabled: false
+      host_env: "SMTP_HOST"
+      port_env: "SMTP_PORT"
+      username_env: "SMTP_USERNAME"
+      password_env: "SMTP_PASSWORD"
+      use_tls_env: "SMTP_USE_TLS"
+
+  # Sending domain controls
+  sending_domains:
+    warmup_enabled: true
+    default_daily_limit: 500
+    max_bounce_rate: 0.05
+    max_complaint_rate: 0.01
+
+campaign:
+  queue:
+    batch_size: 50
+    throttle_per_second: 10
+    max_retries: 3
+    retry_delay_seconds: 60
+  sequence:
+    max_steps: 20
+    default_interval_days: 2
+
+celery:
+  broker_url: "redis://localhost:6379/0"
+  result_backend: "redis://localhost:6379/0"
+  task_serializer: "json"
+  result_serializer: "json"
+  accept_content: ["json"]
+  timezone: "UTC"
+  enable_utc: true
+  task_track_started: true
+  task_time_limit: 3600
+  task_soft_time_limit: 3000
+  worker_prefetch_multiplier: 4
+  worker_max_tasks_per_child: 1000
+  beat_schedule: {}
+
+logging:
+  level: "INFO"
+  format: "json"
+  output: "stdout"
+  file_path: null  # Set to file path for file logging
+
+packages:
+  # Feature entitlements per package (not hard-coded)
+  STARTER:
+    features:
+      contacts: true
+      companies: true
+      leads: true
+      pipeline: true
+      tasks: true
+      notes: true
+      activity_history: true
+      csv_import: true
+      website_leads: true
+      manual_leads: true
+      basic_reports: true
+      basic_email: true
+      basic_lead_assignment: true
+    limits:
+      users: 5
+      contacts: 10000
+      emails_per_day: 100
+      ai_credits: 0
+  GROWTH:
+    features:
+      contacts: true
+      companies: true
+      leads: true
+      pipeline: true
+      tasks: true
+      notes: true
+      activity_history: true
+      csv_import: true
+      website_leads: true
+      manual_leads: true
+      basic_reports: true
+      basic_email: true
+      basic_lead_assignment: true
+      meta_integrations: true
+      google_ads_integration: true
+      linkedin_integration: true
+      email_campaigns: true
+      broadcast_campaigns: true
+      automated_sequences: true
+      campaign_analytics: true
+      whatsapp: true
+      appointment_automation: true
+      advanced_reports: true
+      basic_ai_scoring: true
+      ai_personalized_email: true
+      workflow_automation: true
+    limits:
+      users: 25
+      contacts: 50000
+      emails_per_day: 1000
+      ai_credits: 10000
+  AI_PRO:
+    features:
+      contacts: true
+      companies: true
+      leads: true
+      pipeline: true
+      tasks: true
+      notes: true
+      activity_history: true
+      csv_import: true
+      website_leads: true
+      manual_leads: true
+      basic_reports: true
+      basic_email: true
+      basic_lead_assignment: true
+      meta_integrations: true
+      google_ads_integration: true
+      linkedin_integration: true
+      email_campaigns: true
+      broadcast_campaigns: true
+      automated_sequences: true
+      campaign_analytics: true
+      whatsapp: true
+      appointment_automation: true
+      advanced_reports: true
+      basic_ai_scoring: true
+      ai_personalized_email: true
+      workflow_automation: true
+      ai_lead_scoring: true
+      ai_lead_miner: true
+      ai_campaign_generation: true
+      ai_personalized_emails: true
+      ai_auto_followups: true
+      ai_reply_analysis: true
+      ai_reply_generation: true
+      ai_next_best_action: true
+      ai_auto_assignment: true
+      ai_proposal_generation: true
+      ai_sales_assistant: true
+      website_ai_chatbot: true
+      advanced_workflows: true
+      apollo_integration: true
+      ai_research: true
+      advanced_analytics: true
+    limits:
+      users: 100
+      contacts: 200000
+      emails_per_day: 5000
+      ai_credits: 100000
+  ENTERPRISE:
+    features:
+      all: true
+    limits:
+      users: -1  # unlimited
+      contacts: -1
+      emails_per_day: -1
+      ai_credits: -1

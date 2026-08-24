@@ -1,0 +1,359 @@
+"""
+Configuration management for Globexa CRM.
+Uses Pydantic Settings with YAML config file + environment variable overrides.
+"""
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from functools import lru_cache
+
+import yaml
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AppSettings(BaseSettings):
+    name: str = "Globexa CRM"
+    version: str = "0.1.0"
+    environment: str = "development"
+    debug: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8000
+    cors_origins: List[str] = []
+
+    model_config = SettingsConfigDict(env_prefix="APP_", extra="ignore")
+
+
+class DatabaseSettings(BaseSettings):
+    host: str = "localhost"
+    port: int = 5432
+    username: str = "postgres"
+    password: str = "postgres"
+    name: str = "globexa_crm"
+    pool_size: int = 10
+    max_overflow: int = 20
+    pool_timeout: int = 30
+    pool_recycle: int = 3600
+    echo: bool = False
+
+    model_config = SettingsConfigDict(env_prefix="DATABASE_", extra="ignore")
+
+    @property
+    def url(self) -> str:
+        """Build asyncpg connection URL."""
+        return (
+            f"postgresql+asyncpg://{self.username}:{self.password}"
+            f"@{self.host}:{self.port}/{self.name}"
+        )
+
+    @property
+    def sync_url(self) -> str:
+        """Build sync psycopg2 connection URL for Alembic."""
+        return (
+            f"postgresql://{self.username}:{self.password}"
+            f"@{self.host}:{self.port}/{self.name}"
+        )
+
+
+class RedisSettings(BaseSettings):
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
+    password: Optional[str] = None
+    max_connections: int = 50
+
+    model_config = SettingsConfigDict(env_prefix="REDIS_", extra="ignore")
+
+    @property
+    def url(self) -> str:
+        """Build Redis connection URL."""
+        auth = f":{self.password}@" if self.password else ""
+        return f"redis://{auth}{self.host}:{self.port}/{self.db}"
+
+
+class FirecrawlSettings(BaseSettings):
+    api_key: str = ""
+
+    model_config = SettingsConfigDict(env_prefix="FC_", extra="ignore")
+
+
+class SecuritySettings(BaseSettings):
+    secret_key: str = "CHANGE_ME_IN_PRODUCTION_USE_STRONG_RANDOM_KEY_MIN_32_CHARS"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    password_min_length: int = 8
+    bcrypt_rounds: int = 12
+
+    model_config = SettingsConfigDict(env_prefix="SECURITY_", extra="ignore")
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters")
+        return v
+
+
+class GoogleOAuthSettings(BaseSettings):
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    scopes: List[str] = ["openid", "email", "profile"]
+
+    model_config = SettingsConfigDict(env_prefix="GOOGLE_", extra="ignore")
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.client_id and self.client_secret)
+
+
+class LocalAISettings(BaseSettings):
+    enabled: bool = True
+    base_url: str = "http://localhost:11434"
+    default_model: str = "llama3.2:3b"
+    timeout_seconds: int = 60
+    suitable_tasks: List[str] = [
+        "classification",
+        "simple_scoring",
+        "extraction",
+        "summarization",
+        "intent_identification",
+        "tagging",
+        "routing_decision",
+    ]
+
+    model_config = SettingsConfigDict(env_prefix="OLLAMA_", extra="ignore", nested_delimiter="__")
+
+
+class CloudProviderSettings(BaseSettings):
+    enabled: bool = False
+    api_key_env: str = ""
+    base_url: str = ""
+    models: List[str] = []
+    default_model: str = ""
+
+    model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
+
+    def get_api_key(self) -> Optional[str]:
+        if self.api_key_env:
+            return os.getenv(self.api_key_env)
+        return None
+
+
+class CloudAISettings(BaseSettings):
+    default_provider: str = "nvidia"
+    providers: Dict[str, CloudProviderSettings] = {}
+
+    model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
+
+
+class AIUsageLedgerSettings(BaseSettings):
+    enabled: bool = True
+    log_level: str = "INFO"
+
+    model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
+
+
+class AIRouterSettings(BaseSettings):
+    local: LocalAISettings = LocalAISettings()
+    cloud: CloudAISettings = CloudAISettings()
+    usage_ledger: AIUsageLedgerSettings = AIUsageLedgerSettings()
+
+    model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
+
+
+class EmailProviderSettings(BaseSettings):
+    enabled: bool = False
+    api_key_env: str = ""
+    webhook_secret_env: str = ""
+    client_id_env: str = ""
+    client_secret_env: str = ""
+    tenant_id_env: str = ""
+    host_env: str = ""
+    port_env: str = ""
+    username_env: str = ""
+    password_env: str = ""
+    use_tls_env: str = ""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+
+class EmailSettings(BaseSettings):
+    default_provider: str = "resend"
+    providers: Dict[str, EmailProviderSettings] = {}
+    sending_domains: Dict[str, Any] = {}
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+
+class CampaignQueueSettings(BaseSettings):
+    batch_size: int = 50
+    throttle_per_second: int = 10
+    max_retries: int = 3
+    retry_delay_seconds: int = 60
+
+
+class CampaignSequenceSettings(BaseSettings):
+    max_steps: int = 20
+    default_interval_days: int = 2
+
+
+class CampaignSettings(BaseSettings):
+    queue: CampaignQueueSettings = CampaignQueueSettings()
+    sequence: CampaignSequenceSettings = CampaignSequenceSettings()
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+
+class CelerySettings(BaseSettings):
+    broker_url: str = "redis://localhost:6379/0"
+    result_backend: str = "redis://localhost:6379/0"
+    task_serializer: str = "json"
+    result_serializer: str = "json"
+    accept_content: List[str] = ["json"]
+    timezone: str = "UTC"
+    enable_utc: bool = True
+    task_track_started: bool = True
+    task_time_limit: int = 3600
+    task_soft_time_limit: int = 3000
+    worker_prefetch_multiplier: int = 4
+    worker_max_tasks_per_child: int = 1000
+    beat_schedule: Dict[str, Any] = {}
+
+    model_config = SettingsConfigDict(env_prefix="CELERY_", extra="ignore")
+
+
+class LoggingSettings(BaseSettings):
+    level: str = "INFO"
+    format: str = "json"
+    output: str = "stdout"
+    file_path: Optional[str] = None
+
+    model_config = SettingsConfigDict(env_prefix="LOG_", extra="ignore")
+
+
+class PackageFeatureSettings(BaseSettings):
+    features: Dict[str, bool] = {}
+    limits: Dict[str, int] = {}
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+
+class PackageSettings(BaseSettings):
+    STARTER: PackageFeatureSettings = PackageFeatureSettings()
+    GROWTH: PackageFeatureSettings = PackageFeatureSettings()
+    AI_PRO: PackageFeatureSettings = PackageFeatureSettings()
+    ENTERPRISE: PackageFeatureSettings = PackageFeatureSettings()
+
+    model_config = SettingsConfigDict(extra="ignore")
+
+
+class Settings(BaseSettings):
+    """Main settings container loading from YAML + env vars."""
+
+    app: AppSettings = AppSettings()
+    database: DatabaseSettings = DatabaseSettings()
+    redis: RedisSettings = RedisSettings()
+    security: SecuritySettings = SecuritySettings()
+    firecrawl: FirecrawlSettings = Field(default_factory=FirecrawlSettings)
+    google_oauth: GoogleOAuthSettings = GoogleOAuthSettings()
+    ai_router: AIRouterSettings = AIRouterSettings()
+    email: EmailSettings = EmailSettings()
+    campaign: CampaignSettings = CampaignSettings()
+    celery: CelerySettings = CelerySettings()
+    logging: LoggingSettings = LoggingSettings()
+    packages: PackageSettings = PackageSettings()
+
+    # Flat properties for backward compatibility with tests
+    # FIRECRAWL_API_KEY: Optional[str] = None  # Disabled to avoid nested parsing conflicts
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+        # Don't use nested delimiter for main Settings to avoid parsing FIRECRAWL_API_KEY as firecrawl dict
+    )
+
+    @property
+    def DATABASE_URL(self) -> str:
+        """Flat property for database URL (test compatibility)."""
+        return self.database.url
+
+    @property
+    def REDIS_URL(self) -> str:
+        """Flat property for Redis URL (test compatibility)."""
+        return self.redis.url
+
+    @property
+    def SECRET_KEY(self) -> str:
+        """Flat property for secret key (test compatibility)."""
+        return self.security.secret_key
+
+    @property
+    def ENVIRONMENT(self) -> str:
+        """Flat property for environment (test compatibility)."""
+        return self.app.environment
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str = "config.yaml") -> "Settings":
+        """Load settings from YAML file, then override with environment variables."""
+        path = Path(yaml_path)
+        if not path.exists():
+            # Return default settings if no config file
+            return cls()
+
+        with open(path, "r") as f:
+            yaml_data = yaml.safe_load(f) or {}
+
+        # Create a temporary env var to pass the yaml data
+        # Pydantic settings will load from YAML first, then override with env vars
+        # We need to use a different approach - load the yaml, then let pydantic
+        # handle the env var overrides during initialization
+        
+        # The issue is that **yaml_data passes values as constructor args which
+        # take precedence over env vars. We need to merge them properly.
+        # Solution: Don't pass yaml_data directly, let pydantic read from env
+        # and use yaml as defaults by setting them as environment variables temporarily
+        
+        import os
+        old_env = {}
+        # Set YAML values as env vars temporarily so pydantic can merge
+        # BUT don't override existing env vars (they should take precedence)
+        for key, value in yaml_data.items():
+            if isinstance(value, dict):
+                for nested_key, nested_value in value.items():
+                    env_key = f"{key.upper()}_{nested_key.upper()}"
+                    # Only set if not already set (don't override test env vars)
+                    if env_key not in os.environ:
+                        old_env[env_key] = os.environ.get(env_key)
+                        os.environ[env_key] = str(nested_value)
+            else:
+                env_key = key.upper()
+                if env_key not in os.environ:
+                    old_env[env_key] = os.environ.get(env_key)
+                    os.environ[env_key] = str(value)
+        
+        try:
+            # Now create settings - pydantic will read from env (which has YAML values)
+            # and any actual env vars will take precedence
+            settings = cls()
+            return settings
+        finally:
+            # Restore original env
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings.from_yaml()
+
+
+# Convenience exports - lazy loading to allow env var overrides in tests
+# settings = get_settings()
