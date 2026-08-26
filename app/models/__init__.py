@@ -70,8 +70,13 @@ class Tenant(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    users: Mapped[List["User"]] = relationship("User", back_populates="tenants", secondary="memberships")
-    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="tenant", cascade="all, delete-orphan")
+    users: Mapped[List["User"]] = relationship(
+        "User", 
+        back_populates="tenants", 
+        secondary="memberships",
+        foreign_keys="[Membership.user_id, Membership.tenant_id]"
+    )
+    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="tenant", foreign_keys="Membership.tenant_id", cascade="all, delete-orphan")
     subscription: Mapped[Optional["Subscription"]] = relationship("Subscription", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
     feature_entitlements: Mapped[List["FeatureEntitlement"]] = relationship("FeatureEntitlement", back_populates="tenant", cascade="all, delete-orphan")
     usage_records: Mapped[List["UsageRecord"]] = relationship("UsageRecord", back_populates="tenant", cascade="all, delete-orphan")
@@ -99,9 +104,14 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    tenants: Mapped[List["Tenant"]] = relationship("User", back_populates="users", secondary="memberships")
-    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="user", cascade="all, delete-orphan")
-    owned_tenants: Mapped[List["Tenant"]] = relationship("Tenant", foreign_keys="Tenant.id", backref="owner")
+    tenants: Mapped[List["Tenant"]] = relationship(
+        "Tenant", 
+        back_populates="users", 
+        secondary="memberships",
+        foreign_keys="[Membership.user_id, Membership.tenant_id]"
+    )
+    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="user", foreign_keys="Membership.user_id", cascade="all, delete-orphan")
+    invited_memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="invited_by", foreign_keys="Membership.invited_by_id")
 
 
 class Membership(Base):
@@ -120,8 +130,8 @@ class Membership(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="memberships", foreign_keys=[user_id])
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="memberships")
-    invited_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[invited_by_id])
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="memberships", foreign_keys=[tenant_id])
+    invited_by: Mapped[Optional["User"]] = relationship("User", back_populates="invited_memberships", foreign_keys=[invited_by_id])
 
     # Constraints
     __table_args__ = (

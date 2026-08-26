@@ -15,7 +15,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Enable pgvector for embeddings (AI Lead Miner)
-CREATE EXTENSION IF NOT EXISTS vector;
+-- CREATE EXTENSION IF NOT EXISTS vector;  -- Requires pgvector image
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON DATABASE globexa_crm_test TO postgres;
