@@ -76,7 +76,7 @@ celery_app.conf.beat_schedule = {
     },
     # Retry failed email sends
     "retry-failed-emails": {
-        "task": "app.workers.tasks.email_tasks.retry_failed_emails",
+        "task": "app.workers.tasks.campaign_tasks_v2.retry_failed_emails",
         "schedule": 300.0,  # Every 5 minutes
     },
 }

@@ -38,7 +38,7 @@ services:
     container_name: globexa-api
     environment:
       - APP_ENV=development
-      - APP_ENVIRONMENT=development
+      - APP__ENVIRONMENT=development
       - APP_DEBUG=true
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
@@ -47,6 +47,8 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - CELERY__BROKER_URL=redis://redis:6379/0
+      - CELERY__RESULT_BACKEND=redis://redis:6379/0
       - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -71,7 +73,7 @@ services:
     container_name: globexa-worker
     environment:
       - APP_ENV=development
-      - APP_ENVIRONMENT=development
+      - APP__ENVIRONMENT=development
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USERNAME=postgres
@@ -79,8 +81,8 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY__BROKER_URL=redis://redis:6379/0
+      - CELERY__RESULT_BACKEND=redis://redis:6379/0
       - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -100,7 +102,7 @@ services:
     container_name: globexa-beat
     environment:
       - APP_ENV=development
-      - APP_ENVIRONMENT=development
+      - APP__ENVIRONMENT=development
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USERNAME=postgres
@@ -108,8 +110,8 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY__BROKER_URL=redis://redis:6379/0
+      - CELERY__RESULT_BACKEND=redis://redis:6379/0
       - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -130,8 +132,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY__BROKER_URL=redis://redis:6379/0
+      - CELERY__RESULT_BACKEND=redis://redis:6379/0
     ports:
       - "5555:5555"
     depends_on:

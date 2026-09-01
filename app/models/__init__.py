@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, declared_attr
 
-from app.core.database import Base
+from app.core.database import Base, pg_enum
 
 
 class RoleEnum(str, enum.Enum):
@@ -123,7 +123,7 @@ class Membership(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    role: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), default=RoleEnum.SALES_EXECUTIVE, nullable=False)
+    role: Mapped[RoleEnum] = mapped_column(pg_enum(RoleEnum, "role_enum"), default=RoleEnum.SALES_EXECUTIVE, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     invited_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -148,8 +148,8 @@ class Subscription(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), unique=True, nullable=False)
-    package: Mapped[PackageEnum] = mapped_column(Enum(PackageEnum), default=PackageEnum.STARTER, nullable=False)
-    status: Mapped[SubscriptionStatusEnum] = mapped_column(Enum(SubscriptionStatusEnum), default=SubscriptionStatusEnum.TRIALING, nullable=False)
+    package: Mapped[PackageEnum] = mapped_column(pg_enum(PackageEnum, "package_enum"), default=PackageEnum.STARTER, nullable=False)
+    status: Mapped[SubscriptionStatusEnum] = mapped_column(pg_enum(SubscriptionStatusEnum, "subscription_status_enum"), default=SubscriptionStatusEnum.TRIALING, nullable=False)
     billing_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
@@ -280,8 +280,8 @@ class AIUsageLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    task_type: Mapped[AITaskTypeEnum] = mapped_column(Enum(AITaskTypeEnum), nullable=False, index=True)
-    provider: Mapped[AIProviderEnum] = mapped_column(Enum(AIProviderEnum), nullable=False)
+    task_type: Mapped[AITaskTypeEnum] = mapped_column(pg_enum(AITaskTypeEnum, "ai_task_type_enum"), nullable=False, index=True)
+    provider: Mapped[AIProviderEnum] = mapped_column(pg_enum(AIProviderEnum, "ai_provider_enum"), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -385,6 +385,10 @@ class ActivityTypeEnum(str, enum.Enum):
     CAMPAIGN_SENT = "campaign_sent"
     WHATSAPP_SENT = "whatsapp_sent"
     WHATSAPP_RECEIVED = "whatsapp_received"
+    LEAD_CREATED = "lead_created"
+    EMAIL_DELIVERED = "email_delivered"
+    EMAIL_COMPLAINED = "email_complained"
+    EMAIL_UNSUBSCRIBED = "email_unsubscribed"
 
 
 class Company(Base):
@@ -410,7 +414,7 @@ class Company(Base):
     facebook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     twitter_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     # Attribution
-    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(Enum(LeadSourceEnum), nullable=True)
+    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(pg_enum(LeadSourceEnum, "lead_source_enum"), nullable=True)
     utm_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     utm_medium: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     utm_campaign: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -468,7 +472,7 @@ class Contact(Base):
     email_opted_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sms_opted_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Attribution
-    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(Enum(LeadSourceEnum), nullable=True)
+    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(pg_enum(LeadSourceEnum, "lead_source_enum"), nullable=True)
     utm_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     utm_medium: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     utm_campaign: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -515,13 +519,13 @@ class Lead(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)  # Lead title/subject
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Status & qualification
-    status: Mapped[LeadStatusEnum] = mapped_column(Enum(LeadStatusEnum), default=LeadStatusEnum.NEW, nullable=False, index=True)
+    status: Mapped[LeadStatusEnum] = mapped_column(pg_enum(LeadStatusEnum, "lead_status_enum"), default=LeadStatusEnum.NEW, nullable=False, index=True)
     # Assignment
     owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     assigned_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     assigned_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Source & attribution
-    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(Enum(LeadSourceEnum), nullable=True, index=True)
+    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(pg_enum(LeadSourceEnum, "lead_source_enum"), nullable=True, index=True)
     source_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # External ID from source
     utm_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     utm_medium: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -648,7 +652,7 @@ class Deal(Base):
     probability: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0-100
     weighted_value: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)  # value * probability / 100
     # Source
-    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(Enum(LeadSourceEnum), nullable=True)
+    source: Mapped[Optional[LeadSourceEnum]] = mapped_column(pg_enum(LeadSourceEnum, "lead_source_enum"), nullable=True)
     # Metadata
     custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -691,8 +695,8 @@ class Task(Base):
     # Task details
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[TaskStatusEnum] = mapped_column(Enum(TaskStatusEnum), default=TaskStatusEnum.PENDING, nullable=False, index=True)
-    priority: Mapped[TaskPriorityEnum] = mapped_column(Enum(TaskPriorityEnum), default=TaskPriorityEnum.MEDIUM, nullable=False)
+    status: Mapped[TaskStatusEnum] = mapped_column(pg_enum(TaskStatusEnum, "task_status_enum"), default=TaskStatusEnum.PENDING, nullable=False, index=True)
+    priority: Mapped[TaskPriorityEnum] = mapped_column(pg_enum(TaskPriorityEnum, "task_priority_enum"), default=TaskPriorityEnum.MEDIUM, nullable=False)
     # Assignment
     owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -775,8 +779,9 @@ class Activity(Base):
     deal_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
     contact_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("contacts.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=True, index=True)
     # Activity details
-    type: Mapped[ActivityTypeEnum] = mapped_column(Enum(ActivityTypeEnum), nullable=False, index=True)
+    type: Mapped[ActivityTypeEnum] = mapped_column(pg_enum(ActivityTypeEnum, "activity_type_enum"), nullable=False, index=True)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Actor
@@ -796,6 +801,7 @@ class Activity(Base):
     deal: Mapped[Optional["Deal"]] = relationship("Deal", back_populates="activities")
     contact: Mapped[Optional["Contact"]] = relationship("Contact", backref="activities")
     company: Mapped[Optional["Company"]] = relationship("Company", backref="activities")
+    campaign: Mapped[Optional["Campaign"]] = relationship("Campaign")
     user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])
 
     __table_args__ = (
@@ -921,6 +927,7 @@ class CampaignStatusEnum(str, enum.Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    FAILED = "failed"
 
 
 class CampaignRecipientStatusEnum(str, enum.Enum):
@@ -977,8 +984,8 @@ class Campaign(Base):
     # Basic info
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    type: Mapped[CampaignTypeEnum] = mapped_column(Enum(CampaignTypeEnum), nullable=False, index=True)
-    status: Mapped[CampaignStatusEnum] = mapped_column(Enum(CampaignStatusEnum), default=CampaignStatusEnum.DRAFT, nullable=False, index=True)
+    type: Mapped[CampaignTypeEnum] = mapped_column(pg_enum(CampaignTypeEnum, "campaign_type_enum"), nullable=False, index=True)
+    status: Mapped[CampaignStatusEnum] = mapped_column(pg_enum(CampaignStatusEnum, "campaign_status_enum"), default=CampaignStatusEnum.DRAFT, nullable=False, index=True)
     # Sending identity
     sending_domain_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("sending_domains.id", ondelete="SET NULL"), nullable=True)
     sender_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1029,7 +1036,7 @@ class CampaignAudience(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), unique=True, nullable=False)
     # Audience definition
-    type: Mapped[AudienceTypeEnum] = mapped_column(Enum(AudienceTypeEnum), default=AudienceTypeEnum.STATIC, nullable=False)
+    type: Mapped[AudienceTypeEnum] = mapped_column(pg_enum(AudienceTypeEnum, "audience_type_enum"), default=AudienceTypeEnum.STATIC, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Static audience - list of contact IDs
     contact_ids: Mapped[List[uuid.UUID]] = mapped_column(JSONB, default=list, nullable=False)
@@ -1097,10 +1104,10 @@ class CampaignRecipient(Base):
     contact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)  # Denormalized for sending
     # Status per blueprint
-    status: Mapped[CampaignRecipientStatusEnum] = mapped_column(Enum(CampaignRecipientStatusEnum), default=CampaignRecipientStatusEnum.QUEUED, nullable=False, index=True)
+    status: Mapped[CampaignRecipientStatusEnum] = mapped_column(pg_enum(CampaignRecipientStatusEnum, "campaign_recipient_status_enum"), default=CampaignRecipientStatusEnum.QUEUED, nullable=False, index=True)
     # Provider tracking
     provider_message_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    provider_type: Mapped[Optional[EmailProviderTypeEnum]] = mapped_column(Enum(EmailProviderTypeEnum), nullable=True)
+    provider_type: Mapped[Optional[EmailProviderTypeEnum]] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=True)
     # Timestamps
     queued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1189,7 +1196,7 @@ class CampaignTrigger(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     # Trigger definition
-    trigger_type: Mapped[TriggerTypeEnum] = mapped_column(Enum(TriggerTypeEnum), nullable=False, index=True)
+    trigger_type: Mapped[TriggerTypeEnum] = mapped_column(pg_enum(TriggerTypeEnum, "trigger_type_enum"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Conditions (JSON logic)
     conditions: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # e.g., {"link_url": "pricing", "score_gt": 50}
@@ -1272,7 +1279,7 @@ class EmailEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     # Provider info
-    provider: Mapped[EmailProviderTypeEnum] = mapped_column(Enum(EmailProviderTypeEnum), nullable=False)
+    provider: Mapped[EmailProviderTypeEnum] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=False)
     provider_event_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     provider_event_type: Mapped[str] = mapped_column(String(100), nullable=False)  # delivered, opened, clicked, bounced, etc.
     # Link to our recipient
@@ -1335,7 +1342,7 @@ class SendingDomain(Base):
     from_email: Mapped[str] = mapped_column(String(255), nullable=False)
     reply_to_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Provider config
-    provider: Mapped[EmailProviderTypeEnum] = mapped_column(Enum(EmailProviderTypeEnum), nullable=False)
+    provider: Mapped[EmailProviderTypeEnum] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=False)
     provider_config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # Encrypted credentials
     # Verification
     dkim_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -1375,7 +1382,7 @@ class EmailProviderConfig(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
-    provider: Mapped[EmailProviderTypeEnum] = mapped_column(Enum(EmailProviderTypeEnum), nullable=False)
+    provider: Mapped[EmailProviderTypeEnum] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=False)
     # Encrypted credentials (application-level encryption)
     credentials_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # JSON encrypted
     # Config
@@ -1462,18 +1469,18 @@ class Integration(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     # Integration details
-    type: Mapped[IntegrationTypeEnum] = mapped_column(Enum(IntegrationTypeEnum), nullable=False, index=True)
+    type: Mapped[IntegrationTypeEnum] = mapped_column(pg_enum(IntegrationTypeEnum, "integration_type_enum"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Status
-    status: Mapped[IntegrationStatusEnum] = mapped_column(Enum(IntegrationStatusEnum), default=IntegrationStatusEnum.PENDING, nullable=False, index=True)
+    status: Mapped[IntegrationStatusEnum] = mapped_column(pg_enum(IntegrationStatusEnum, "integration_status_enum"), default=IntegrationStatusEnum.PENDING, nullable=False, index=True)
     # Configuration
     config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # API endpoints, webhook URLs, etc.
     # Sync settings
     sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sync_frequency_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)  # 0 = manual only
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_sync_status: Mapped[Optional[SyncStatusEnum]] = mapped_column(Enum(SyncStatusEnum), nullable=True)
+    last_sync_status: Mapped[Optional[SyncStatusEnum]] = mapped_column(pg_enum(SyncStatusEnum, "sync_status_enum"), nullable=True)
     last_sync_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     records_synced: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Field mapping (source -> CRM field)
@@ -1580,7 +1587,7 @@ class IntegrationSyncLog(Base):
     integration_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("integrations.id", ondelete="CASCADE"), nullable=False, index=True)
     # Sync details
     sync_type: Mapped[str] = mapped_column(String(50), nullable=False)  # full, incremental, manual
-    status: Mapped[SyncStatusEnum] = mapped_column(Enum(SyncStatusEnum), default=SyncStatusEnum.PENDING, nullable=False)
+    status: Mapped[SyncStatusEnum] = mapped_column(pg_enum(SyncStatusEnum, "sync_status_enum"), default=SyncStatusEnum.PENDING, nullable=False)
     # Counts
     records_processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     records_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -1623,7 +1630,7 @@ class LeadSourceConfig(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Type mapping
-    source_type: Mapped[IntegrationTypeEnum] = mapped_column(Enum(IntegrationTypeEnum), nullable=False)
+    source_type: Mapped[IntegrationTypeEnum] = mapped_column(pg_enum(IntegrationTypeEnum, "integration_type_enum"), nullable=False)
     # Attribution defaults
     default_utm_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     default_utm_medium: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -1720,7 +1727,7 @@ class AttributionRule(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     # Rule definition
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    model: Mapped[AttributionModelEnum] = mapped_column(Enum(AttributionModelEnum), default=AttributionModelEnum.LAST_TOUCH, nullable=False)
+    model: Mapped[AttributionModelEnum] = mapped_column(pg_enum(AttributionModelEnum, "attribution_model_enum"), default=AttributionModelEnum.LAST_TOUCH, nullable=False)
     # Lookback window
     lookback_days: Mapped[int] = mapped_column(Integer, default=90, nullable=False)
     # Touchpoint filters
@@ -1782,7 +1789,7 @@ class PendingLead(Base):
     # Raw data from source
     raw_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     # Status
-    status: Mapped[PendingLeadStatusEnum] = mapped_column(Enum(PendingLeadStatusEnum), default=PendingLeadStatusEnum.PENDING, nullable=False, index=True)
+    status: Mapped[PendingLeadStatusEnum] = mapped_column(pg_enum(PendingLeadStatusEnum, "pending_lead_status_enum"), default=PendingLeadStatusEnum.PENDING, nullable=False, index=True)
     # Review
     assigned_reviewer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

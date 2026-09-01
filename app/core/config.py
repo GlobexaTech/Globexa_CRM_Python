@@ -228,7 +228,8 @@ class CelerySettings(BaseSettings):
     worker_max_tasks_per_child: int = 1000
     beat_schedule: Dict[str, Any] = {}
 
-    model_config = SettingsConfigDict(env_prefix="CELERY_", extra="ignore")
+    # No env_prefix - use top-level env_nested_delimiter
+    model_config = SettingsConfigDict(extra="ignore")
 
 
 class LoggingSettings(BaseSettings):
@@ -280,7 +281,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        # Don't use nested delimiter for main Settings to avoid parsing FIRECRAWL as firecrawl dict
+        env_nested_delimiter="__",
     )
 
     @property
@@ -305,7 +306,15 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_yaml(cls, yaml_path: str = "config.yaml") -> "Settings":
-        """Load settings from YAML file, then override with environment variables."""
+        """Load settings from YAML file, then override with environment variables.
+        
+        Priority (highest to lowest):
+        1. Environment variables (highest)
+        2. YAML config file
+        3. Default values (lowest)
+        
+        Pydantic Settings naturally gives env vars priority over init kwargs.
+        """
         path = Path(yaml_path)
         if not path.exists():
             # Return default settings if no config file
@@ -314,26 +323,28 @@ class Settings(BaseSettings):
         with open(path, "r") as f:
             yaml_data = yaml.safe_load(f) or {}
 
-        # Convert nested YAML dict to flat kwargs with __ delimiter
-        # This matches the env_nested_delimiter expected by nested settings
-        def flatten_dict(d, parent_key=""):
-            items = {}
-            for k, v in d.items():
-                new_key = f"{parent_key}__{k}" if parent_key else k
-                if isinstance(v, dict):
-                    items.update(flatten_dict(v, new_key))
-                else:
-                    items[new_key] = v
-            return items
+        # Build init kwargs directly from YAML
+        # We need to handle nested settings properly
+        kwargs = {}
+        
+        def process_value(v):
+            """Convert YAML values to appropriate Python types for settings."""
+            if isinstance(v, dict):
+                # Recursively process nested dicts
+                return {k2: process_value(v2) for k2, v2 in v.items()}
+            elif isinstance(v, list):
+                return [process_value(item) for item in v]
+            else:
+                # Return as-is for primitives (str, int, float, bool, None)
+                return v
+        
+        # Use the nested structure directly as kwargs
+        for key, value in yaml_data.items():
+            kwargs[key] = process_value(value)
 
-        flat_kwargs = flatten_dict(yaml_data)
-        
-        # Filter out empty values that would cause JSON parsing errors
-        filtered_kwargs = {k: v for k, v in flat_kwargs.items() if v not in (None, "", [], {})}
-        
-        # Create settings with YAML data as kwargs (takes precedence over defaults)
+        # Create settings with YAML data as kwargs
         # Pydantic will then overlay env vars on top (since env vars have higher priority)
-        settings = cls(**filtered_kwargs)
+        settings = cls(**kwargs)
         return settings
 
 

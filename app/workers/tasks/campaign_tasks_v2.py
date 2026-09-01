@@ -726,22 +726,36 @@ def process_scheduled_campaigns():
     """Check and send scheduled campaigns."""
     logger.info("Processing scheduled campaigns")
     
-    async def _process():
-        async with AsyncSessionLocal() as db:
-            now = datetime.now(timezone.utc)
-            result = await db.execute(
-                select(Campaign).where(
-                    Campaign.status == CampaignStatusEnum.SCHEDULED,
-                    Campaign.scheduled_at <= now,
-                )
+    # Use synchronous execution instead of asyncio.run() to avoid event loop conflicts
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    
+    if loop and loop.is_running():
+        # Schedule the coroutine to run in the existing loop
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, _process())
+            return future.result()
+    else:
+        asyncio.run(_process())
+
+
+async def _process():
+    async with AsyncSessionLocal() as db:
+        now = datetime.now(timezone.utc)
+        result = await db.execute(
+            select(Campaign).where(
+                Campaign.status == CampaignStatusEnum.SCHEDULED,
+                Campaign.scheduled_at <= now,
             )
-            campaigns = result.scalars().all()
+        )
+        campaigns = result.scalars().all()
 
-            for campaign in campaigns:
-                from app.workers.tasks.campaign_tasks import send_campaign_task
-                send_campaign_task.delay(str(campaign.id), str(campaign.created_by_id))
-
-    asyncio.run(_process())
+        for campaign in campaigns:
+            send_campaign_task.delay(str(campaign.id), str(campaign.created_by_id))
 
 
 @shared_task
@@ -749,26 +763,38 @@ def retry_failed_emails():
     """Retry failed email sends."""
     logger.info("Retrying failed emails")
     
-    async def _retry():
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(CampaignRecipient).where(
-                    CampaignRecipient.status == CampaignRecipientStatusEnum.FAILED,
-                ).limit(100)
-            )
-            recipients = result.scalars().all()
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, _retry())
+            return future.result()
+    else:
+        asyncio.run(_retry())
 
-            for recipient in recipients:
-                recipient.status = CampaignRecipientStatusEnum.QUEUED
-                recipient.error_message = None
-                
-                # Re-queue
-                from app.workers.tasks.campaign_tasks import send_campaign_task
-                send_campaign_task.delay(str(recipient.campaign_id), str(recipient.campaign.created_by_id))
 
-            await db.commit()
+async def _retry():
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(CampaignRecipient).where(
+                CampaignRecipient.status == CampaignRecipientStatusEnum.FAILED,
+            ).limit(100)
+        )
+        recipients = result.scalars().all()
 
-    asyncio.run(_retry())
+        for recipient in recipients:
+            recipient.status = CampaignRecipientStatusEnum.QUEUED
+            recipient.error_message = None
+            
+            # Re-queue
+            send_campaign_task.delay(str(recipient.campaign_id), str(recipient.campaign.created_by_id))
+
+        await db.commit()
 
 
 @shared_task
