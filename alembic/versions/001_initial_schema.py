@@ -3,7 +3,6 @@
 Revision ID: 001_initial_schema
 Revises: 
 Create Date: 2024-08-13 00:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,28 +16,48 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    role_enum = sa.Enum('owner', 'admin', 'sales_manager', 'sales_executive', 'marketing', 'viewer', name='role_enum')
-    role_enum.create(op.get_bind(), checkfirst=True)
-
-    package_enum = sa.Enum('starter', 'growth', 'ai_pro', 'enterprise', name='package_enum')
-    package_enum.create(op.get_bind(), checkfirst=True)
-
-    subscription_status_enum = sa.Enum('active', 'trialing', 'past_due', 'canceled', 'paused', 'incomplete', name='subscription_status_enum')
-    subscription_status_enum.create(op.get_bind(), checkfirst=True)
-
-    ai_provider_enum = sa.Enum('ollama', 'nvidia', 'openai', 'anthropic', 'google', name='ai_provider_enum')
-    ai_provider_enum.create(op.get_bind(), checkfirst=True)
-
-    ai_task_type_enum = sa.Enum(
-        'classification', 'simple_scoring', 'extraction', 'summarization',
-        'intent_identification', 'tagging', 'routing_decision',
-        'lead_scoring', 'personalization', 'campaign_generation',
-        'proposal_generation', 'reply_analysis', 'reply_generation',
-        'next_best_action', 'lead_mining', 'research', 'chat_assistant',
-        name='ai_task_type_enum'
-    )
-    ai_task_type_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum types using raw SQL with IF NOT EXISTS to avoid duplicate errors
+    # This is more reliable with asyncpg than SQLAlchemy's checkfirst
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE role_enum AS ENUM ('owner', 'admin', 'sales_manager', 'sales_executive', 'marketing', 'viewer');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE package_enum AS ENUM ('starter', 'growth', 'ai_pro', 'enterprise');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE subscription_status_enum AS ENUM ('active', 'trialing', 'past_due', 'canceled', 'paused', 'incomplete');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE ai_provider_enum AS ENUM ('ollama', 'nvidia', 'openai', 'anthropic', 'google');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE ai_task_type_enum AS ENUM (
+                'classification', 'simple_scoring', 'extraction', 'summarization',
+                'intent_identification', 'tagging', 'routing_decision',
+                'lead_scoring', 'personalization', 'campaign_generation',
+                'proposal_generation', 'reply_analysis', 'reply_generation',
+                'next_best_action', 'lead_mining', 'research', 'chat_assistant'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # tenants table
     op.create_table(
@@ -90,7 +109,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('role', role_enum, nullable=False, server_default='sales_executive'),
+        sa.Column('role', postgresql.ENUM('owner', 'admin', 'sales_manager', 'sales_executive', 'marketing', 'viewer', name='role_enum', create_type=False), nullable=False, server_default='sales_executive'),
         sa.Column('is_default', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('invited_by_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('joined_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
@@ -109,8 +128,8 @@ def upgrade() -> None:
         'subscriptions',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('package', package_enum, nullable=False, server_default='starter'),
-        sa.Column('status', subscription_status_enum, nullable=False, server_default='trialing'),
+        sa.Column('package', postgresql.ENUM('starter', 'growth', 'ai_pro', 'enterprise', name='package_enum', create_type=False), nullable=False, server_default='starter'),
+        sa.Column('status', postgresql.ENUM('active', 'trialing', 'past_due', 'canceled', 'paused', 'incomplete', name='subscription_status_enum', create_type=False), nullable=False, server_default='trialing'),
         sa.Column('billing_email', sa.String(255), nullable=True),
         sa.Column('stripe_customer_id', sa.String(255), nullable=True),
         sa.Column('stripe_subscription_id', sa.String(255), nullable=True),
@@ -197,8 +216,8 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('task_type', ai_task_type_enum, nullable=False),
-        sa.Column('provider', ai_provider_enum, nullable=False),
+        sa.Column('task_type', postgresql.ENUM('classification', 'simple_scoring', 'extraction', 'summarization', 'intent_identification', 'tagging', 'routing_decision', 'lead_scoring', 'personalization', 'campaign_generation', 'proposal_generation', 'reply_analysis', 'reply_generation', 'next_best_action', 'lead_mining', 'research', 'chat_assistant', name='ai_task_type_enum', create_type=False), nullable=False),
+        sa.Column('provider', postgresql.ENUM('ollama', 'nvidia', 'openai', 'anthropic', 'google', name='ai_provider_enum', create_type=False), nullable=False),
         sa.Column('model', sa.String(100), nullable=False),
         sa.Column('input_tokens', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('output_tokens', sa.Integer(), nullable=False, server_default='0'),
@@ -230,8 +249,8 @@ def downgrade() -> None:
     op.drop_table('tenants')
 
     # Drop enum types
-    sa.Enum(name='ai_task_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='ai_provider_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='subscription_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='package_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='role_enum').drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS ai_task_type_enum")
+    op.execute("DROP TYPE IF EXISTS ai_provider_enum")
+    op.execute("DROP TYPE IF EXISTS subscription_status_enum")
+    op.execute("DROP TYPE IF EXISTS package_enum")
+    op.execute("DROP TYPE IF EXISTS role_enum")

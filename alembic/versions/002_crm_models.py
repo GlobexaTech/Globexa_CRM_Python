@@ -3,7 +3,6 @@
 Revision ID: 002_crm_models
 Revises: 001_initial_schema
 Create Date: 2024-08-14 00:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,50 +16,72 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    lead_source_enum = sa.Enum(
-        'website', 'meta_lead_ads', 'facebook', 'instagram', 'linkedin', 'google_ads',
-        'csv_import', 'whatsapp', 'email_inbox', 'apollo', 'website_chatbot',
-        'ai_lead_miner', 'referral', 'manual', 'api', 'webhook', 'appointments',
-        'partner_integration', 'other',
-        name='lead_source_enum'
-    )
-    lead_source_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum types using raw SQL with IF NOT EXISTS to avoid duplicate errors
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE lead_source_enum AS ENUM (
+                'website', 'meta_lead_ads', 'facebook', 'instagram', 'linkedin', 'google_ads',
+                'csv_import', 'whatsapp', 'email_inbox', 'apollo', 'website_chatbot',
+                'ai_lead_miner', 'referral', 'manual', 'api', 'webhook', 'appointments',
+                'partner_integration', 'other'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE lead_status_enum AS ENUM (
+                'new', 'contacted', 'qualified', 'unqualified', 'nurturing', 'converted', 'lost'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE deal_stage_enum AS ENUM (
+                'prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE task_status_enum AS ENUM (
+                'pending', 'in_progress', 'completed', 'cancelled'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE task_priority_enum AS ENUM (
+                'low', 'medium', 'high', 'urgent'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE activity_type_enum AS ENUM (
+                'note', 'call', 'email', 'meeting', 'task',
+                'email_opened', 'email_clicked', 'email_replied', 'email_bounced',
+                'stage_changed', 'assignment', 'ai_action', 'campaign_sent',
+                'whatsapp_sent', 'whatsapp_received'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
-    lead_status_enum = sa.Enum(
-        'new', 'contacted', 'qualified', 'unqualified', 'nurturing', 'converted', 'lost',
-        name='lead_status_enum'
-    )
-    lead_status_enum.create(op.get_bind(), checkfirst=True)
-
-    deal_stage_enum = sa.Enum(
-        'prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost',
-        name='deal_stage_enum'
-    )
-    deal_stage_enum.create(op.get_bind(), checkfirst=True)
-
-    task_status_enum = sa.Enum(
-        'pending', 'in_progress', 'completed', 'cancelled',
-        name='task_status_enum'
-    )
-    task_status_enum.create(op.get_bind(), checkfirst=True)
-
-    task_priority_enum = sa.Enum(
-        'low', 'medium', 'high', 'urgent',
-        name='task_priority_enum'
-    )
-    task_priority_enum.create(op.get_bind(), checkfirst=True)
-
-    activity_type_enum = sa.Enum(
-        'note', 'call', 'email', 'meeting', 'task',
-        'email_opened', 'email_clicked', 'email_replied', 'email_bounced',
-        'stage_changed', 'assignment', 'ai_action', 'campaign_sent',
-        'whatsapp_sent', 'whatsapp_received',
-        name='activity_type_enum'
-    )
-    activity_type_enum.create(op.get_bind(), checkfirst=True)
-
-    # companies table
+    # =========================================================================
+    # CREATE TABLES IN DEPENDENCY ORDER (no circular FKs initially)
+    # =========================================================================
+    
+    # 1. companies table (no dependencies)
     op.create_table(
         'companies',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -81,7 +102,7 @@ def upgrade() -> None:
         sa.Column('linkedin_url', sa.String(500), nullable=True),
         sa.Column('facebook_url', sa.String(500), nullable=True),
         sa.Column('twitter_url', sa.String(500), nullable=True),
-        sa.Column('source', lead_source_enum, nullable=True),
+        sa.Column('source', postgresql.ENUM(name='lead_source_enum', create_type=False), nullable=True),
         sa.Column('utm_source', sa.String(100), nullable=True),
         sa.Column('utm_medium', sa.String(100), nullable=True),
         sa.Column('utm_campaign', sa.String(100), nullable=True),
@@ -105,7 +126,7 @@ def upgrade() -> None:
     op.create_index('ix_companies_tenant_source', 'companies', ['tenant_id', 'source'])
     op.create_index('ix_companies_tenant_id', 'companies', ['tenant_id'])
 
-    # contacts table
+    # 2. contacts table (depends on companies)
     op.create_table(
         'contacts',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -128,7 +149,7 @@ def upgrade() -> None:
         sa.Column('do_not_contact', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('email_opted_out', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('sms_opted_out', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('source', lead_source_enum, nullable=True),
+        sa.Column('source', postgresql.ENUM(name='lead_source_enum', create_type=False), nullable=True),
         sa.Column('utm_source', sa.String(100), nullable=True),
         sa.Column('utm_medium', sa.String(100), nullable=True),
         sa.Column('utm_campaign', sa.String(100), nullable=True),
@@ -152,63 +173,7 @@ def upgrade() -> None:
     op.create_index('ix_contacts_tenant_name', 'contacts', ['tenant_id', 'last_name', 'first_name'])
     op.create_index('ix_contacts_tenant_id', 'contacts', ['tenant_id'])
 
-    # leads table
-    op.create_table(
-        'leads',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('company_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('title', sa.String(255), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('status', lead_status_enum, nullable=False, server_default='new'),
-        sa.Column('owner_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('assigned_by_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('assigned_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('source', lead_source_enum, nullable=True),
-        sa.Column('source_id', sa.String(255), nullable=True),
-        sa.Column('utm_source', sa.String(100), nullable=True),
-        sa.Column('utm_medium', sa.String(100), nullable=True),
-        sa.Column('utm_campaign', sa.String(100), nullable=True),
-        sa.Column('utm_content', sa.String(100), nullable=True),
-        sa.Column('utm_term', sa.String(100), nullable=True),
-        sa.Column('referrer_url', sa.String(500), nullable=True),
-        sa.Column('landing_page', sa.String(500), nullable=True),
-        sa.Column('ai_score', sa.Integer(), nullable=True),
-        sa.Column('ai_score_reason', sa.Text(), nullable=True),
-        sa.Column('ai_next_action', sa.Text(), nullable=True),
-        sa.Column('ai_next_action_confidence', sa.Float(), nullable=True),
-        sa.Column('ai_summary', sa.Text(), nullable=True),
-        sa.Column('is_qualified', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('qualified_by_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('qualified_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('qualification_notes', sa.Text(), nullable=True),
-        sa.Column('converted_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('converted_deal_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
-        sa.Column('created_by_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('updated_by_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(['assigned_by_id'], ['users.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['contact_id'], ['contacts.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['converted_deal_id'], ['deals.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['qualified_by_id'], ['users.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['updated_by_id'], ['users.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_leads_tenant_status', 'leads', ['tenant_id', 'status'])
-    op.create_index('ix_leads_tenant_owner', 'leads', ['tenant_id', 'owner_id'])
-    op.create_index('ix_leads_tenant_source', 'leads', ['tenant_id', 'source'])
-    op.create_index('ix_leads_tenant_ai_score', 'leads', ['tenant_id', 'ai_score'])
-    op.create_index('ix_leads_tenant_created', 'leads', ['tenant_id', 'created_at'])
-    op.create_index('ix_leads_tenant_id', 'leads', ['tenant_id'])
-
-    # pipelines table
+    # 3. pipelines table (no CRM dependencies)
     op.create_table(
         'pipelines',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -225,7 +190,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_pipelines_tenant_id', 'pipelines', ['tenant_id'])
 
-    # stages table
+    # 4. stages table (depends on pipelines)
     op.create_table(
         'stages',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -248,7 +213,64 @@ def upgrade() -> None:
     op.create_index('ix_stages_tenant_id', 'stages', ['tenant_id'])
     op.create_index('ix_stages_pipeline_id', 'stages', ['pipeline_id'])
 
-    # deals table
+    # 5. leads table (depends on contacts, companies - NO deals FK yet)
+    op.create_table(
+        'leads',
+        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('company_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('title', sa.String(255), nullable=False),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('status', postgresql.ENUM(name='lead_status_enum', create_type=False), nullable=False, server_default='new'),
+        sa.Column('owner_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('assigned_by_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('assigned_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('source', postgresql.ENUM(name='lead_source_enum', create_type=False), nullable=True),
+        sa.Column('source_id', sa.String(255), nullable=True),
+        sa.Column('utm_source', sa.String(100), nullable=True),
+        sa.Column('utm_medium', sa.String(100), nullable=True),
+        sa.Column('utm_campaign', sa.String(100), nullable=True),
+        sa.Column('utm_content', sa.String(100), nullable=True),
+        sa.Column('utm_term', sa.String(100), nullable=True),
+        sa.Column('referrer_url', sa.String(500), nullable=True),
+        sa.Column('landing_page', sa.String(500), nullable=True),
+        sa.Column('ai_score', sa.Integer(), nullable=True),
+        sa.Column('ai_score_reason', sa.Text(), nullable=True),
+        sa.Column('ai_next_action', sa.Text(), nullable=True),
+        sa.Column('ai_next_action_confidence', sa.Float(), nullable=True),
+        sa.Column('ai_summary', sa.Text(), nullable=True),
+        sa.Column('is_qualified', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('qualified_by_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('qualified_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('qualification_notes', sa.Text(), nullable=True),
+        sa.Column('converted_at', sa.DateTime(timezone=True), nullable=True),
+        # converted_deal_id FK added later after deals table exists
+        sa.Column('converted_deal_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
+        sa.Column('created_by_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('updated_by_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(['assigned_by_id'], ['users.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['contact_id'], ['contacts.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['qualified_by_id'], ['users.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['updated_by_id'], ['users.id'], ondelete='SET NULL'),
+        sa.PrimaryKeyConstraint('id'),
+    )
+    op.create_index('ix_leads_tenant_status', 'leads', ['tenant_id', 'status'])
+    op.create_index('ix_leads_tenant_owner', 'leads', ['tenant_id', 'owner_id'])
+    op.create_index('ix_leads_tenant_source', 'leads', ['tenant_id', 'source'])
+    op.create_index('ix_leads_tenant_ai_score', 'leads', ['tenant_id', 'ai_score'])
+    op.create_index('ix_leads_tenant_created', 'leads', ['tenant_id', 'created_at'])
+    op.create_index('ix_leads_tenant_id', 'leads', ['tenant_id'])
+
+    # 6. deals table (depends on pipelines, stages, contacts, companies, leads)
+    # lead_id FK added later after leads table exists
     op.create_table(
         'deals',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -257,6 +279,7 @@ def upgrade() -> None:
         sa.Column('stage_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('company_id', postgresql.UUID(as_uuid=True), nullable=True),
+        # lead_id FK added later after leads table exists
         sa.Column('lead_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('title', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
@@ -267,7 +290,7 @@ def upgrade() -> None:
         sa.Column('actual_close_date', sa.DateTime(timezone=True), nullable=True),
         sa.Column('probability', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('weighted_value', sa.BigInteger(), nullable=False, server_default='0'),
-        sa.Column('source', lead_source_enum, nullable=True),
+        sa.Column('source', postgresql.ENUM(name='lead_source_enum', create_type=False), nullable=True),
         sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
         sa.Column('created_by_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('updated_by_id', postgresql.UUID(as_uuid=True), nullable=True),
@@ -276,7 +299,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['contact_id'], ['contacts.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['lead_id'], ['leads.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['pipeline_id'], ['pipelines.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['stage_id'], ['stages.id'], ondelete='CASCADE'),
@@ -290,7 +312,17 @@ def upgrade() -> None:
     op.create_index('ix_deals_tenant_expected_close', 'deals', ['tenant_id', 'expected_close_date'])
     op.create_index('ix_deals_tenant_id', 'deals', ['tenant_id'])
 
-    # tasks table
+    # 7. NOW add the circular FKs after both tables exist
+    op.create_foreign_key(
+        'fk_leads_converted_deal_id', 'leads', 'deals',
+        ['converted_deal_id'], ['id'], ondelete='SET NULL'
+    )
+    op.create_foreign_key(
+        'fk_deals_lead_id', 'deals', 'leads',
+        ['lead_id'], ['id'], ondelete='SET NULL'
+    )
+
+    # 8. tasks table (depends on contacts, companies, deals, leads)
     op.create_table(
         'tasks',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -301,8 +333,8 @@ def upgrade() -> None:
         sa.Column('company_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('title', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('status', task_status_enum, nullable=False, server_default='pending'),
-        sa.Column('priority', task_priority_enum, nullable=False, server_default='medium'),
+        sa.Column('status', postgresql.ENUM(name='task_status_enum', create_type=False), nullable=False, server_default='pending'),
+        sa.Column('priority', postgresql.ENUM(name='task_priority_enum', create_type=False), nullable=False, server_default='medium'),
         sa.Column('owner_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('created_by_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('due_date', sa.DateTime(timezone=True), nullable=True),
@@ -329,7 +361,7 @@ def upgrade() -> None:
     op.create_index('ix_tasks_tenant_deal', 'tasks', ['tenant_id', 'deal_id'])
     op.create_index('ix_tasks_tenant_id', 'tasks', ['tenant_id'])
 
-    # notes table
+    # 9. notes table (depends on contacts, companies, deals, leads)
     op.create_table(
         'notes',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -358,7 +390,7 @@ def upgrade() -> None:
     op.create_index('ix_notes_tenant_company', 'notes', ['tenant_id', 'company_id'])
     op.create_index('ix_notes_tenant_id', 'notes', ['tenant_id'])
 
-    # activities table
+    # 10. activities table (depends on contacts, companies, deals, leads)
     op.create_table(
         'activities',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -367,7 +399,7 @@ def upgrade() -> None:
         sa.Column('deal_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('company_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('type', activity_type_enum, nullable=False),
+        sa.Column('type', postgresql.ENUM(name='activity_type_enum', create_type=False), nullable=False),
         sa.Column('subject', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=True),
@@ -392,7 +424,7 @@ def upgrade() -> None:
     op.create_index('ix_activities_tenant_id', 'activities', ['tenant_id'])
     op.create_index('ix_activities_correlation_id', 'activities', ['correlation_id'])
 
-    # proposals table
+    # 11. proposals table (depends on deals)
     op.create_table(
         'proposals',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -427,20 +459,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Drop tables in reverse order
     op.drop_table('proposals')
     op.drop_table('activities')
     op.drop_table('notes')
     op.drop_table('tasks')
+    op.drop_table('leads')
     op.drop_table('deals')
     op.drop_table('stages')
     op.drop_table('pipelines')
-    op.drop_table('leads')
     op.drop_table('contacts')
     op.drop_table('companies')
 
-    sa.Enum(name='activity_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='task_priority_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='task_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='deal_stage_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='lead_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='lead_source_enum').drop(op.get_bind(), checkfirst=True)
+    # Drop enum types
+    op.execute("DROP TYPE IF EXISTS activity_type_enum")
+    op.execute("DROP TYPE IF EXISTS task_priority_enum")
+    op.execute("DROP TYPE IF EXISTS task_status_enum")
+    op.execute("DROP TYPE IF EXISTS deal_stage_enum")
+    op.execute("DROP TYPE IF EXISTS lead_status_enum")
+    op.execute("DROP TYPE IF EXISTS lead_source_enum")

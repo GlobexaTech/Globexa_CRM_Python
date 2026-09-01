@@ -139,23 +139,6 @@ services:
         condition: service_healthy
     command: celery -A app.workers.celery_app flower --port=5555
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: globexa-frontend
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
-
 volumes:
   postgres_data:
   redis_data:

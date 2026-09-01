@@ -3,7 +3,6 @@
 Revision ID: 003_campaign_models
 Revises: 002_crm_models
 Create Date: 2024-08-15 00:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,45 +16,122 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    campaign_type_enum = sa.Enum(
-        'broadcast', 'sequence', 'triggered',
-        name='campaign_type_enum'
-    )
-    campaign_type_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum types using raw SQL with IF NOT EXISTS to avoid duplicate errors
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE campaign_type_enum AS ENUM (
+                'broadcast', 'sequence', 'triggered'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE campaign_status_enum AS ENUM (
+                'draft', 'scheduled', 'sending', 'sent', 'paused', 'completed', 'cancelled'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE campaign_recipient_status_enum AS ENUM (
+                'queued', 'scheduled', 'sending', 'sent', 'delivered', 'opened', 'clicked',
+                'replied', 'bounced', 'complained', 'unsubscribed', 'suppressed', 'failed'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE audience_type_enum AS ENUM (
+                'static', 'dynamic'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE trigger_type_enum AS ENUM (
+                'email_opened', 'email_clicked', 'email_replied', 'link_clicked',
+                'form_submitted', 'stage_changed', 'deal_created', 'task_completed',
+                'custom_event', 'date_based'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE email_provider_type_enum AS ENUM (
+                'resend', 'gmail', 'microsoft', 'smtp'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
-    campaign_status_enum = sa.Enum(
-        'draft', 'scheduled', 'sending', 'sent', 'paused', 'completed', 'cancelled',
-        name='campaign_status_enum'
+    # sending_domains table (must be created before campaigns which references it)
+    op.create_table(
+        'sending_domains',
+        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('domain', sa.String(255), nullable=False),
+        sa.Column('subdomain', sa.String(100), nullable=True),
+        sa.Column('from_name', sa.String(255), nullable=False),
+        sa.Column('from_email', sa.String(255), nullable=False),
+        sa.Column('reply_to_email', sa.String(255), nullable=True),
+        sa.Column('provider', postgresql.ENUM(name='email_provider_type_enum', create_type=False), nullable=False),
+        sa.Column('provider_config', postgresql.JSONB(), nullable=False, server_default='{}'),
+        sa.Column('dkim_verified', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('spf_verified', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('dmarc_verified', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('verified_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('warmup_enabled', sa.Boolean(), nullable=False, server_default='true'),
+        sa.Column('warmup_stage', sa.Integer(), nullable=False, server_default='0'),
+        sa.Column('daily_limit', sa.Integer(), nullable=False, server_default='500'),
+        sa.Column('current_daily_count', sa.Integer(), nullable=False, server_default='0'),
+        sa.Column('last_sent_date', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('bounce_rate', sa.Float(), nullable=False, server_default='0.0'),
+        sa.Column('complaint_rate', sa.Float(), nullable=False, server_default='0.0'),
+        sa.Column('reply_rate', sa.Float(), nullable=False, server_default='0.0'),
+        sa.Column('health_score', sa.Integer(), nullable=False, server_default='100'),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
+        sa.Column('is_default', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('paused_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('pause_reason', sa.Text(), nullable=True),
+        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('tenant_id', 'domain', 'subdomain', name='uq_sending_domain_tenant_domain_sub'),
     )
-    campaign_status_enum.create(op.get_bind(), checkfirst=True)
+    op.create_index('ix_sending_domains_tenant_active', 'sending_domains', ['tenant_id', 'is_active'])
+    op.create_index('ix_sending_domains_tenant_id', 'sending_domains', ['tenant_id'])
 
-    recipient_status_enum = sa.Enum(
-        'queued', 'scheduled', 'sending', 'sent', 'delivered', 'opened', 'clicked',
-        'replied', 'bounced', 'complained', 'unsubscribed', 'suppressed', 'failed',
-        name='campaign_recipient_status_enum'
+    # email_provider_configs table
+    op.create_table(
+        'email_provider_configs',
+        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('provider', postgresql.ENUM(name='email_provider_type_enum', create_type=False), nullable=False),
+        sa.Column('credentials_encrypted', sa.Text(), nullable=False),
+        sa.Column('is_default', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
+        sa.Column('name', sa.String(255), nullable=False),
+        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('tenant_id', 'provider', 'name', name='uq_email_config_tenant_provider_name'),
     )
-    recipient_status_enum.create(op.get_bind(), checkfirst=True)
-
-    audience_type_enum = sa.Enum(
-        'static', 'dynamic',
-        name='audience_type_enum'
-    )
-    audience_type_enum.create(op.get_bind(), checkfirst=True)
-
-    trigger_type_enum = sa.Enum(
-        'email_opened', 'email_clicked', 'email_replied', 'link_clicked',
-        'form_submitted', 'stage_changed', 'deal_created', 'task_completed',
-        'custom_event', 'date_based',
-        name='trigger_type_enum'
-    )
-    trigger_type_enum.create(op.get_bind(), checkfirst=True)
-
-    email_provider_enum = sa.Enum(
-        'resend', 'gmail', 'microsoft', 'smtp',
-        name='email_provider_type_enum'
-    )
-    email_provider_enum.create(op.get_bind(), checkfirst=True)
+    op.create_index('ix_email_configs_tenant_default', 'email_provider_configs', ['tenant_id', 'is_default'])
+    op.create_index('ix_email_configs_tenant_id', 'email_provider_configs', ['tenant_id'])
 
     # campaigns table
     op.create_table(
@@ -64,8 +140,8 @@ def upgrade() -> None:
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('type', campaign_type_enum, nullable=False),
-        sa.Column('status', campaign_status_enum, nullable=False, server_default='draft'),
+        sa.Column('type', postgresql.ENUM(name='campaign_type_enum', create_type=False), nullable=False),
+        sa.Column('status', postgresql.ENUM(name='campaign_status_enum', create_type=False), nullable=False, server_default='draft'),
         sa.Column('sending_domain_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('sender_name', sa.String(255), nullable=False),
         sa.Column('sender_email', sa.String(255), nullable=False),
@@ -101,7 +177,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('campaign_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('type', audience_type_enum, nullable=False, server_default='static'),
+        sa.Column('type', postgresql.ENUM(name='audience_type_enum', create_type=False), nullable=False, server_default='static'),
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('contact_ids', postgresql.JSONB(), nullable=False, server_default='[]'),
         sa.Column('filters', postgresql.JSONB(), nullable=True),
@@ -156,9 +232,9 @@ def upgrade() -> None:
         sa.Column('template_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('email', sa.String(255), nullable=False),
-        sa.Column('status', recipient_status_enum, nullable=False, server_default='queued'),
+        sa.Column('status', postgresql.ENUM(name='campaign_recipient_status_enum', create_type=False), nullable=False, server_default='queued'),
         sa.Column('provider_message_id', sa.String(255), nullable=True),
-        sa.Column('provider_type', email_provider_enum, nullable=True),
+        sa.Column('provider_type', postgresql.ENUM(name='email_provider_type_enum', create_type=False), nullable=True),
         sa.Column('queued_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('scheduled_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('sent_at', sa.DateTime(timezone=True), nullable=True),
@@ -228,7 +304,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('campaign_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('trigger_type', trigger_type_enum, nullable=False),
+        sa.Column('trigger_type', postgresql.ENUM(name='trigger_type_enum', create_type=False), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('conditions', postgresql.JSONB(), nullable=False, server_default='{}'),
         sa.Column('template_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -297,7 +373,7 @@ def upgrade() -> None:
         'email_events',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('provider', email_provider_enum, nullable=False),
+        sa.Column('provider', postgresql.ENUM(name='email_provider_type_enum', create_type=False), nullable=False),
         sa.Column('provider_event_id', sa.String(255), nullable=False),
         sa.Column('provider_event_type', sa.String(100), nullable=False),
         sa.Column('recipient_id', postgresql.UUID(as_uuid=True), nullable=True),
@@ -326,7 +402,7 @@ def upgrade() -> None:
         sa.Column('contact_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('reason', sa.String(100), nullable=False),
         sa.Column('reason_detail', sa.Text(), nullable=True),
-        sa.Column('provider', email_provider_enum, nullable=True),
+        sa.Column('provider', postgresql.ENUM(name='email_provider_type_enum', create_type=False), nullable=True),
         sa.Column('provider_event_id', sa.String(255), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
@@ -340,65 +416,6 @@ def upgrade() -> None:
     )
     op.create_index('ix_suppression_lists_tenant_active', 'suppression_lists', ['tenant_id', 'is_active'])
     op.create_index('ix_suppression_lists_tenant_id', 'suppression_lists', ['tenant_id'])
-
-    # sending_domains table
-    op.create_table(
-        'sending_domains',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('domain', sa.String(255), nullable=False),
-        sa.Column('subdomain', sa.String(100), nullable=True),
-        sa.Column('from_name', sa.String(255), nullable=False),
-        sa.Column('from_email', sa.String(255), nullable=False),
-        sa.Column('reply_to_email', sa.String(255), nullable=True),
-        sa.Column('provider', email_provider_enum, nullable=False),
-        sa.Column('provider_config', postgresql.JSONB(), nullable=False, server_default='{}'),
-        sa.Column('dkim_verified', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('spf_verified', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('dmarc_verified', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('verified_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('warmup_enabled', sa.Boolean(), nullable=False, server_default='true'),
-        sa.Column('warmup_stage', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('daily_limit', sa.Integer(), nullable=False, server_default='500'),
-        sa.Column('current_daily_count', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('last_sent_date', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('bounce_rate', sa.Float(), nullable=False, server_default='0.0'),
-        sa.Column('complaint_rate', sa.Float(), nullable=False, server_default='0.0'),
-        sa.Column('reply_rate', sa.Float(), nullable=False, server_default='0.0'),
-        sa.Column('health_score', sa.Integer(), nullable=False, server_default='100'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
-        sa.Column('is_default', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('paused_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('pause_reason', sa.Text(), nullable=True),
-        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('tenant_id', 'domain', 'subdomain', name='uq_sending_domain_tenant_domain_sub'),
-    )
-    op.create_index('ix_sending_domains_tenant_active', 'sending_domains', ['tenant_id', 'is_active'])
-    op.create_index('ix_sending_domains_tenant_id', 'sending_domains', ['tenant_id'])
-
-    # email_provider_configs table
-    op.create_table(
-        'email_provider_configs',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('provider', email_provider_enum, nullable=False),
-        sa.Column('credentials_encrypted', sa.Text(), nullable=False),
-        sa.Column('is_default', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
-        sa.Column('name', sa.String(255), nullable=False),
-        sa.Column('custom_fields', postgresql.JSONB(), nullable=False, server_default='{}'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('tenant_id', 'provider', 'name', name='uq_email_config_tenant_provider_name'),
-    )
-    op.create_index('ix_email_configs_tenant_default', 'email_provider_configs', ['tenant_id', 'is_default'])
-    op.create_index('ix_email_configs_tenant_id', 'email_provider_configs', ['tenant_id'])
 
 
 def downgrade() -> None:
@@ -414,9 +431,9 @@ def downgrade() -> None:
     op.drop_table('campaign_audiences')
     op.drop_table('campaigns')
 
-    sa.Enum(name='email_provider_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='trigger_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='audience_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='campaign_recipient_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='campaign_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='campaign_type_enum').drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS email_provider_type_enum")
+    op.execute("DROP TYPE IF EXISTS trigger_type_enum")
+    op.execute("DROP TYPE IF EXISTS audience_type_enum")
+    op.execute("DROP TYPE IF EXISTS campaign_recipient_status_enum")
+    op.execute("DROP TYPE IF EXISTS campaign_status_enum")
+    op.execute("DROP TYPE IF EXISTS campaign_type_enum")

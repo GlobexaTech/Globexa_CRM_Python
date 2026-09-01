@@ -27,7 +27,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
     # Paths that don't require tenant resolution
     EXCLUDED_PATHS = {
+        "/",
         "/health",
+        "/health/",
+        "/health/live",
+        "/health/ready",
         "/docs",
         "/redoc",
         "/openapi.json",

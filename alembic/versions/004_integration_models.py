@@ -3,7 +3,6 @@
 Revision ID: 004_integration_models
 Revises: 003_campaign_models
 Create Date: 2024-08-16 00:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,53 +16,68 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    integration_type_enum = sa.Enum(
-        'meta', 'google_ads', 'linkedin', 'apollo', 'whatsapp', 'csv', 'webhook',
-        'email_inbox', 'website_form', 'website_chatbot', 'ai_lead_miner',
-        'appointments', 'referral', 'partner', 'api', 'other',
-        name='integration_type_enum'
-    )
-    integration_type_enum.create(op.get_bind(), checkfirst=True)
-
-    integration_status_enum = sa.Enum(
-        'pending', 'connected', 'error', 'disconnected', 'expired',
-        name='integration_status_enum'
-    )
-    integration_status_enum.create(op.get_bind(), checkfirst=True)
-
-    sync_status_enum = sa.Enum(
-        'pending', 'running', 'completed', 'failed', 'partial',
-        name='sync_status_enum'
-    )
-    sync_status_enum.create(op.get_bind(), checkfirst=True)
-
-    field_mapping_type_enum = sa.Enum(
-        'direct', 'transform', 'static', 'computed',
-        name='field_mapping_type_enum'
-    )
-    field_mapping_type_enum.create(op.get_bind(), checkfirst=True)
-
-    attribution_model_enum = sa.Enum(
-        'first_touch', 'last_touch', 'linear', 'time_decay', 'u_shaped', 'w_shaped', 'custom',
-        name='attribution_model_enum'
-    )
-    attribution_model_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum types using raw SQL with IF NOT EXISTS to avoid duplicate errors
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE integration_type_enum AS ENUM (
+                'meta', 'google_ads', 'linkedin', 'apollo', 'whatsapp', 'csv', 'webhook',
+                'email_inbox', 'website_form', 'website_chatbot', 'ai_lead_miner',
+                'appointments', 'referral', 'partner', 'api', 'other'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE integration_status_enum AS ENUM (
+                'pending', 'connected', 'error', 'disconnected', 'expired'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE sync_status_enum AS ENUM (
+                'pending', 'running', 'completed', 'failed', 'partial'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE field_mapping_type_enum AS ENUM (
+                'direct', 'transform', 'static', 'computed'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE attribution_model_enum AS ENUM (
+                'first_touch', 'last_touch', 'linear', 'time_decay', 'u_shaped', 'w_shaped', 'custom'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # integrations table
     op.create_table(
         'integrations',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('type', integration_type_enum, nullable=False),
+        sa.Column('type', postgresql.ENUM(name='integration_type_enum', create_type=False), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('status', integration_status_enum, nullable=False, server_default='pending'),
+        sa.Column('status', postgresql.ENUM(name='integration_status_enum', create_type=False), nullable=False, server_default='pending'),
         sa.Column('config', postgresql.JSONB(), nullable=False, server_default='{}'),
         sa.Column('sync_enabled', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('sync_frequency_minutes', sa.Integer(), nullable=False, server_default='60'),
         sa.Column('last_sync_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('last_sync_status', sync_status_enum, nullable=True),
+        sa.Column('last_sync_status', postgresql.ENUM(name='sync_status_enum', create_type=False), nullable=True),
         sa.Column('last_sync_error', sa.Text(), nullable=True),
         sa.Column('records_synced', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('field_mappings', postgresql.JSONB(), nullable=False, server_default='[]'),
@@ -143,7 +157,7 @@ def upgrade() -> None:
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('integration_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('sync_type', sa.String(50), nullable=False),
-        sa.Column('status', sync_status_enum, nullable=False, server_default='pending'),
+        sa.Column('status', postgresql.ENUM(name='sync_status_enum', create_type=False), nullable=False, server_default='pending'),
         sa.Column('records_processed', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('records_created', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('records_updated', sa.Integer(), nullable=False, server_default='0'),
@@ -174,7 +188,7 @@ def upgrade() -> None:
         sa.Column('source_key', sa.String(100), nullable=False),
         sa.Column('display_name', sa.String(255), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('source_type', integration_type_enum, nullable=False),
+        sa.Column('source_type', postgresql.ENUM(name='integration_type_enum', create_type=False), nullable=False),
         sa.Column('default_utm_source', sa.String(100), nullable=True),
         sa.Column('default_utm_medium', sa.String(100), nullable=True),
         sa.Column('default_utm_campaign', sa.String(100), nullable=True),
@@ -248,7 +262,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('tenant_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
-        sa.Column('model', attribution_model_enum, nullable=False, server_default='last_touch'),
+        sa.Column('model', postgresql.ENUM(name='attribution_model_enum', create_type=False), nullable=False, server_default='last_touch'),
         sa.Column('lookback_days', sa.Integer(), nullable=False, server_default='90'),
         sa.Column('included_sources', postgresql.JSONB(), nullable=False, server_default='[]'),
         sa.Column('excluded_sources', postgresql.JSONB(), nullable=False, server_default='[]'),
@@ -304,8 +318,8 @@ def downgrade() -> None:
     op.drop_table('integration_credentials')
     op.drop_table('integrations')
 
-    sa.Enum(name='attribution_model_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='field_mapping_type_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='sync_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='integration_status_enum').drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name='integration_type_enum').drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS attribution_model_enum")
+    op.execute("DROP TYPE IF EXISTS field_mapping_type_enum")
+    op.execute("DROP TYPE IF EXISTS sync_status_enum")
+    op.execute("DROP TYPE IF EXISTS integration_status_enum")
+    op.execute("DROP TYPE IF EXISTS integration_type_enum")

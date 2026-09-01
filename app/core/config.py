@@ -73,8 +73,15 @@ class RedisSettings(BaseSettings):
 
 class FirecrawlSettings(BaseSettings):
     api_key: str = ""
-
+    
     model_config = SettingsConfigDict(env_prefix="FIRECRAWL_", extra="ignore")
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_api_key(cls, v):
+        if v is None:
+            return ""
+        return str(v)
 
 
 class SecuritySettings(BaseSettings):
@@ -273,7 +280,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        # Don't use nested delimiter for main Settings to avoid parsing FIRECRAWL_API_KEY as firecrawl dict
+        # Don't use nested delimiter for main Settings to avoid parsing FIRECRAWL as firecrawl dict
     )
 
     @property
@@ -307,46 +314,27 @@ class Settings(BaseSettings):
         with open(path, "r") as f:
             yaml_data = yaml.safe_load(f) or {}
 
-        # Create a temporary env var to pass the yaml data
-        # Pydantic settings will load from YAML first, then override with env vars
-        # We need to use a different approach - load the yaml, then let pydantic
-        # handle the env var overrides during initialization
-        
-        # The issue is that **yaml_data passes values as constructor args which
-        # take precedence over env vars. We need to merge them properly.
-        # Solution: Don't pass yaml_data directly, let pydantic read from env
-        # and use yaml as defaults by setting them as environment variables temporarily
-        
-        import os
-        old_env = {}
-        # Set YAML values as env vars temporarily so pydantic can merge
-        # BUT don't override existing env vars (they should take precedence)
-        for key, value in yaml_data.items():
-            if isinstance(value, dict):
-                for nested_key, nested_value in value.items():
-                    env_key = f"{key.upper()}_{nested_key.upper()}"
-                    # Only set if not already set (don't override test env vars)
-                    if env_key not in os.environ:
-                        old_env[env_key] = os.environ.get(env_key)
-                        os.environ[env_key] = str(nested_value)
-            else:
-                env_key = key.upper()
-                if env_key not in os.environ:
-                    old_env[env_key] = os.environ.get(env_key)
-                    os.environ[env_key] = str(value)
-        
-        try:
-            # Now create settings - pydantic will read from env (which has YAML values)
-            # and any actual env vars will take precedence
-            settings = cls()
-            return settings
-        finally:
-            # Restore original env
-            for key, value in old_env.items():
-                if value is None:
-                    os.environ.pop(key, None)
+        # Convert nested YAML dict to flat kwargs with __ delimiter
+        # This matches the env_nested_delimiter expected by nested settings
+        def flatten_dict(d, parent_key=""):
+            items = {}
+            for k, v in d.items():
+                new_key = f"{parent_key}__{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.update(flatten_dict(v, new_key))
                 else:
-                    os.environ[key] = value
+                    items[new_key] = v
+            return items
+
+        flat_kwargs = flatten_dict(yaml_data)
+        
+        # Filter out empty values that would cause JSON parsing errors
+        filtered_kwargs = {k: v for k, v in flat_kwargs.items() if v not in (None, "", [], {})}
+        
+        # Create settings with YAML data as kwargs (takes precedence over defaults)
+        # Pydantic will then overlay env vars on top (since env vars have higher priority)
+        settings = cls(**filtered_kwargs)
+        return settings
 
 
 @lru_cache

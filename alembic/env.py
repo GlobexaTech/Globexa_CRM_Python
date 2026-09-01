@@ -30,7 +30,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set the database URL from settings
-config.set_main_option("sqlalchemy.url", settings.database.sync_url)
+config.set_main_option("sqlalchemy.url", settings.database.url)
 
 # Target metadata for autogenerate
 target_metadata = Base.metadata
@@ -71,7 +71,10 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Override with async URL since sync_url uses psycopg2
     )
+    # Use async URL instead of sync URL
+    connectable.engine.url = connectable.engine.url.set(drivername="postgresql+asyncpg")
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
