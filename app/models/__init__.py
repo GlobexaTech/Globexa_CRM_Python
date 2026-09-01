@@ -74,9 +74,10 @@ class Tenant(Base):
         "User", 
         back_populates="tenants", 
         secondary="memberships",
-        foreign_keys="[Membership.user_id, Membership.tenant_id]"
+        foreign_keys="[Membership.user_id, Membership.tenant_id]",
+        overlaps="memberships"
     )
-    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="tenant", foreign_keys="Membership.tenant_id", cascade="all, delete-orphan")
+    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="tenant", foreign_keys="Membership.tenant_id", cascade="all, delete-orphan", overlaps="users")
     subscription: Mapped[Optional["Subscription"]] = relationship("Subscription", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
     feature_entitlements: Mapped[List["FeatureEntitlement"]] = relationship("FeatureEntitlement", back_populates="tenant", cascade="all, delete-orphan")
     usage_records: Mapped[List["UsageRecord"]] = relationship("UsageRecord", back_populates="tenant", cascade="all, delete-orphan")
@@ -108,10 +109,11 @@ class User(Base):
         "Tenant", 
         back_populates="users", 
         secondary="memberships",
-        foreign_keys="[Membership.user_id, Membership.tenant_id]"
+        foreign_keys="[Membership.user_id, Membership.tenant_id]",
+        overlaps="memberships"
     )
-    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="user", foreign_keys="Membership.user_id", cascade="all, delete-orphan")
-    invited_memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="invited_by", foreign_keys="Membership.invited_by_id")
+    memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="user", foreign_keys="Membership.user_id", cascade="all, delete-orphan", overlaps="tenants,invited_memberships")
+    invited_memberships: Mapped[List["Membership"]] = relationship("Membership", back_populates="invited_by", foreign_keys="Membership.invited_by_id", overlaps="memberships")
 
 
 class Membership(Base):
@@ -129,9 +131,9 @@ class Membership(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="memberships", foreign_keys=[user_id])
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="memberships", foreign_keys=[tenant_id])
-    invited_by: Mapped[Optional["User"]] = relationship("User", back_populates="invited_memberships", foreign_keys=[invited_by_id])
+    user: Mapped["User"] = relationship("User", back_populates="memberships", foreign_keys=[user_id], overlaps="tenants,invited_memberships,users")
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="memberships", foreign_keys=[tenant_id], overlaps="users,tenants")
+    invited_by: Mapped[Optional["User"]] = relationship("User", back_populates="invited_memberships", foreign_keys=[invited_by_id], overlaps="memberships")
 
     # Constraints
     __table_args__ = (
@@ -1408,6 +1410,7 @@ class IntegrationTypeEnum(str, enum.Enum):
     WEBSITE_FORM = "website_form"    # Website form submissions
     WEBSITE_CHATBOT = "website_chatbot"  # Website chatbot
     AI_LEAD_MINER = "ai_lead_miner"  # AI Lead Miner
+    FIRECRAWL = "firecrawl"          # Firecrawl web search
     APPOINTMENTS = "appointments"    # Appointment booking
     REFERRAL = "referral"            # Referral tracking
     PARTNER = "partner"              # Partner integrations
@@ -1745,6 +1748,64 @@ class AttributionRule(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_attribution_rule_tenant_name"),
         Index("ix_attribution_rules_tenant_active", "tenant_id", "is_active"),
+    )
+
+
+# =============================================================================
+# External Lead Source / Pending Lead Models (Firecrawl, etc.)
+# =============================================================================
+
+class PendingLeadStatusEnum(str, enum.Enum):
+    """Pending lead approval status."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    NEEDS_REVIEW = "needs_review"
+
+
+class PendingLead(Base):
+    """Leads from external sources (Firecrawl, etc.) awaiting approval."""
+    __tablename__ = "pending_leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Source info
+    source: Mapped[str] = mapped_column(String(100), nullable=False, index=True)  # firecrawl, meta, linkedin, etc.
+    source_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)  # External ID
+    # Lead data (denormalized for quick review)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Raw data from source
+    raw_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    # Status
+    status: Mapped[PendingLeadStatusEnum] = mapped_column(Enum(PendingLeadStatusEnum), default=PendingLeadStatusEnum.PENDING, nullable=False, index=True)
+    # Review
+    assigned_reviewer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Created lead reference (after approval)
+    created_lead_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True)
+    created_contact_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    tenant: Mapped["Tenant"] = relationship("Tenant")
+    assigned_reviewer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[assigned_reviewer_id])
+    reviewed_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewed_by_id])
+    created_lead: Mapped[Optional["Lead"]] = relationship("Lead", foreign_keys=[created_lead_id])
+    created_contact: Mapped[Optional["Contact"]] = relationship("Contact", foreign_keys=[created_contact_id])
+
+    __table_args__ = (
+        Index("ix_pending_leads_tenant_status", "tenant_id", "status"),
+        Index("ix_pending_leads_tenant_source", "tenant_id", "source"),
+        Index("ix_pending_leads_tenant_email", "tenant_id", "email"),
     )
 
 

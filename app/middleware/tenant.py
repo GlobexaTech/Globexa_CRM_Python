@@ -79,7 +79,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if tenant_id_header:
             try:
                 tenant_id = UUID(tenant_id_header)
-                return await self._get_tenant_by_id(tenant_id)
+                tenant = await self._get_tenant_by_id(tenant_id)
+                if tenant:
+                    # Verify the authenticated user is a member of this tenant
+                    # Skip for auth endpoints that don't have user yet
+                    if not request.url.path.startswith("/api/v1/auth/"):
+                        user_tenant_id = getattr(request.state, "user_tenant_id", None)
+                        if user_tenant_id and str(user_tenant_id) != str(tenant_id):
+                            return None  # User not a member of this tenant
+                return tenant
             except ValueError:
                 pass
 

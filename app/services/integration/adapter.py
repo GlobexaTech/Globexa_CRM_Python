@@ -15,6 +15,12 @@ import io
 from email.parser import BytesParser
 from email.policy import default
 
+# Import FirecrawlAdapter to avoid circular imports
+try:
+    from app.services.integration.firecrawl_adapter import FirecrawlAdapter
+except ImportError:
+    FirecrawlAdapter = None
+
 logger = structlog.get_logger()
 
 
@@ -1051,8 +1057,16 @@ class IntegrationAdapterFactory:
     }
 
     @classmethod
+    def _get_adapters(cls):
+        """Get adapters dictionary, including Firecrawl if available."""
+        adapters = cls._adapters.copy()
+        if FirecrawlAdapter is not None:
+            adapters["firecrawl"] = FirecrawlAdapter
+        return adapters
+
+    @classmethod
     def get_adapter(cls, integration_type: str) -> IntegrationAdapter:
-        adapter_class = cls._adapters.get(integration_type)
+        adapter_class = cls._get_adapters().get(integration_type)
         if not adapter_class:
             raise ValueError(f"No adapter for integration type: {integration_type}")
         return adapter_class()

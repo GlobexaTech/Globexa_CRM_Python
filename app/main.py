@@ -18,9 +18,11 @@ from app.api.v1.users import router as users_router
 from app.api.v1.health import router as health_router
 from app.api.v1.contacts import router as contacts_router
 from app.api.v1.companies import router as companies_router
-from app.api.v1.leads import router as leads_router
+from app.api.v1.leads import leads_router, firecrawl_router
 from app.api.v1.deals import router as deals_router
-from app.api.v1.tasks import tasks_router as tasks_router, tasks_router as notes_router, tasks_router as activities_router
+from app.api.v1.tasks import tasks_router
+from app.api.v1.tasks import notes_router
+from app.api.v1.tasks import activities_router
 from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.ai import router as ai_router
@@ -140,6 +142,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(contacts_router, prefix="/api/v1")
 app.include_router(companies_router, prefix="/api/v1")
 app.include_router(leads_router, prefix="/api/v1")
+app.include_router(firecrawl_router, prefix="/api/v1")
 app.include_router(deals_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(notes_router, prefix="/api/v1")
@@ -151,20 +154,22 @@ app.include_router(ai_router, prefix="/api/v1")
 # Root endpoint
 @app.get("/")
 async def root():
+    s = _get_settings()
     return {
-        "name": settings.app.name,
-        "version": settings.app.version,
+        "name": s.app.name,
+        "version": s.app.version,
         "status": "running",
-        "docs": "/docs" if settings.app.debug else "disabled",
+        "docs": "/docs" if s.app.debug else "disabled",
     }
 
 
 if __name__ == "__main__":
     import uvicorn
+    s = _get_settings()
     uvicorn.run(
         "app.main:app",
-        host=settings.app.host,
-        port=settings.app.port,
-        reload=settings.app.debug,
+        host=s.app.host,
+        port=s.app.port,
+        reload=s.app.debug,
         log_config=None,  # Use structlog
     )

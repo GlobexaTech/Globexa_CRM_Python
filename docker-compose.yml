@@ -12,7 +12,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -39,6 +38,7 @@ services:
     container_name: globexa-api
     environment:
       - APP_ENV=development
+      - APP_ENVIRONMENT=development
       - APP_DEBUG=true
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
@@ -47,7 +47,7 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -71,6 +71,7 @@ services:
     container_name: globexa-worker
     environment:
       - APP_ENV=development
+      - APP_ENVIRONMENT=development
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USERNAME=postgres
@@ -78,7 +79,9 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     depends_on:
@@ -97,6 +100,7 @@ services:
     container_name: globexa-beat
     environment:
       - APP_ENV=development
+      - APP_ENVIRONMENT=development
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USERNAME=postgres
@@ -104,7 +108,9 @@ services:
       - DATABASE_NAME=globexa_crm
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECURITY_SECRET_KEY=${SECURITY_SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     depends_on:
@@ -124,12 +130,31 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     ports:
       - "5555:5555"
     depends_on:
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app flower --port=5555
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: globexa-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
 
 volumes:
   postgres_data:

@@ -360,7 +360,7 @@ async def get_current_user_optional(
 
 async def get_current_user(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> tuple[User, Membership]:
     """Get current user from token (required - raises 401 if invalid)."""
@@ -379,6 +379,10 @@ async def get_current_user(
 
     if not result:
         raise credentials_exception
+
+    user, membership = result
+    # Set user's tenant_id in request state for X-Tenant-ID validation
+    request.state.user_tenant_id = membership.tenant_id
 
     return result
 
@@ -403,8 +407,8 @@ def require_permission(permission: Permission):
         role_perms = get_role_permissions(membership.role)
 
         # Check feature entitlements for feature permissions
-        if permission.value.startswith("feature:"):
-            feature_key = permission.value.replace("feature:", "")
+        if permission.startswith("feature:"):
+            feature_key = permission.replace("feature:", "")
             result = await db.execute(
                 select(FeatureEntitlement).where(
                     FeatureEntitlement.tenant_id == membership.tenant_id,

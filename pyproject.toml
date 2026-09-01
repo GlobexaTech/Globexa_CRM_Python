@@ -34,6 +34,7 @@ dependencies = [
     "email-validator>=2.1.0",
     "phonenumbers>=8.13.0",
     "aiosmtplib>=3.0.0",
+    "firecrawl-py>=0.1.0",
 ]
 
 [project.optional-dependencies]

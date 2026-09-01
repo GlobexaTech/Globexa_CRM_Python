@@ -5,6 +5,7 @@ Uses SQLAlchemy 2.0 async with asyncpg.
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -80,9 +81,9 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database - create all tables."""
+    """Initialize database - just verify connection, don't create tables (Alembic manages schema)."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("SELECT 1"))
 
 
 async def close_db() -> None:

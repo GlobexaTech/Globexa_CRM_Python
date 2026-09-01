@@ -74,7 +74,7 @@ class RedisSettings(BaseSettings):
 class FirecrawlSettings(BaseSettings):
     api_key: str = ""
 
-    model_config = SettingsConfigDict(env_prefix="FC_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="FIRECRAWL_", extra="ignore")
 
 
 class SecuritySettings(BaseSettings):

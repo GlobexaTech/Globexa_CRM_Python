@@ -15,11 +15,8 @@ celery_app = Celery(
     backend=settings.celery.result_backend,
     include=[
         "app.workers.tasks.email_tasks",
-        "app.workers.tasks.campaign_tasks",
         "app.workers.tasks.campaign_tasks_v2",
-        "app.workers.tasks.ai_tasks",
         "app.workers.tasks.ai_tasks_v2",
-        "app.workers.tasks.integration_tasks",
         "app.workers.tasks.integration_tasks_v2",
         "app.workers.tasks.usage_tasks",
     ],
@@ -41,12 +38,12 @@ celery_app.conf.update(
     # Result backend settings
     result_expires=3600,
     result_compression='gzip',
-    # Task routing
+    # Task routing - V2 tasks
     task_routes={
         "app.workers.tasks.email_tasks.*": {"queue": "emails"},
-        "app.workers.tasks.campaign_tasks.*": {"queue": "campaigns"},
-        "app.workers.tasks.ai_tasks.*": {"queue": "ai"},
-        "app.workers.tasks.integration_tasks.*": {"queue": "integrations"},
+        "app.workers.tasks.campaign_tasks_v2.*": {"queue": "campaigns"},
+        "app.workers.tasks.ai_tasks_v2.*": {"queue": "ai"},
+        "app.workers.tasks.integration_tasks_v2.*": {"queue": "integrations"},
         "app.workers.tasks.usage_tasks.*": {"queue": "usage"},
     },
     # Worker settings
@@ -74,7 +71,7 @@ celery_app.conf.beat_schedule = {
     },
     # Process scheduled campaigns
     "process-scheduled-campaigns": {
-        "task": "app.workers.tasks.campaign_tasks.process_scheduled_campaigns",
+        "task": "app.workers.tasks.campaign_tasks_v2.process_scheduled_campaigns",
         "schedule": 60.0,  # Every minute
     },
     # Retry failed email sends

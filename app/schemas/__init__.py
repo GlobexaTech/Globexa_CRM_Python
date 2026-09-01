@@ -3,6 +3,7 @@ Pydantic schemas for Globexa CRM API.
 Request/Response models for authentication, tenants, users.
 """
 from datetime import datetime
+from enum import Enum
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
@@ -803,3 +804,112 @@ class ProposalResponse(ProposalBase, TimestampMixin):
     ai_model: Optional[str] = None
     created_by_id: UUID
     created_by: Optional[UserResponse] = None
+
+
+# =============================================================================
+# Firecrawl Lead Search Schemas
+# =============================================================================
+
+class FirecrawlSearchRequest(BaseModel):
+    """Request to search for leads via Firecrawl."""
+    query: str = Field(..., min_length=3, max_length=500, description="Search query for finding leads")
+    limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
+    location: Optional[str] = Field(None, max_length=200, description="Geographic location filter")
+    industry: Optional[str] = Field(None, max_length=100, description="Industry filter")
+    company_size: Optional[str] = Field(None, max_length=50, description="Company size filter")
+    technologies: Optional[List[str]] = Field(None, description="Technology stack filters")
+
+
+class FirecrawlSearchResult(BaseModel):
+    """Single lead result from Firecrawl search."""
+    email: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    title: Optional[str] = None
+    company_name: Optional[str] = None
+    company_domain: Optional[str] = None
+    phone: Optional[str] = None
+    source: str
+    medium: str
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+    raw_data: Dict[str, Any] = {}
+    custom_fields: Dict[str, Any] = {}
+
+
+class FirecrawlSearchResponse(BaseModel):
+    """Response from Firecrawl lead search."""
+    success: bool
+    query: str
+    results_count: int
+    leads: List[FirecrawlSearchResult]
+    error_message: Optional[str] = None
+
+
+# =============================================================================
+# Lead Approval Workflow Schemas
+# =============================================================================
+
+class LeadApprovalStatusEnum(str, Enum):
+    """Lead approval status."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    NEEDS_REVIEW = "needs_review"
+
+
+class LeadSourceApprovalRequest(BaseModel):
+    """Request to approve/reject a lead from external source."""
+    source: str = Field(..., description="Source of the lead (firecrawl, meta, linkedin, etc.)")
+    source_id: str = Field(..., description="External ID from source system")
+    lead_data: Dict[str, Any] = Field(..., description="Raw lead data from source")
+    action: str = Field(..., description="Action: approve, reject, needs_review")
+    reviewer_notes: Optional[str] = None
+
+
+class LeadSourceApprovalResponse(BaseModel):
+    """Response after lead approval action."""
+    success: bool
+    lead_id: Optional[UUID] = None
+    status: LeadApprovalStatusEnum
+    message: str
+    requires_contact_creation: bool = False
+
+
+class PendingLeadReview(BaseModel):
+    """Lead pending review from external source."""
+    id: UUID
+    source: str
+    source_id: str
+    email: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    title: Optional[str] = None
+    company_name: Optional[str] = None
+    raw_data: Dict[str, Any] = {}
+    created_at: datetime
+    assigned_reviewer_id: Optional[UUID] = None
+
+
+class BulkLeadApprovalRequest(BaseModel):
+    """Bulk approve/reject multiple leads."""
+    lead_ids: List[UUID]
+    action: str = Field(..., description="Action: approve, reject")
+    reviewer_notes: Optional[str] = None
+
+
+class BulkLeadApprovalResponse(BaseModel):
+    """Response for bulk lead approval."""
+    success: bool
+    processed: int
+    approved: int
+    rejected: int
+    failed: int
+    errors: List[Dict[str, Any]] = []
+
+
+# Forward references for circular dependencies
+ProposalResponse.model_rebuild()

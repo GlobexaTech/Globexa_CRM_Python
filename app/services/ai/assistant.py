@@ -425,7 +425,7 @@ Current context:
 
         # Get role permissions
         from app.api.deps import get_role_permissions
-        return [p.value for p in get_role_permissions(membership.role)]
+        return list(get_role_permissions(membership.role))
 
     async def _execute_tool(
         self,

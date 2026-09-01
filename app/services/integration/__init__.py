@@ -15,6 +15,7 @@ from app.services.integration.adapter import (
     WebhookAdapter,
     EmailInboxAdapter,
 )
+from app.services.integration.firecrawl_adapter import FirecrawlAdapter
 
 __all__ = [
     "IntegrationAdapter",
@@ -29,4 +30,5 @@ __all__ = [
     "CSVAdapter",
     "WebhookAdapter",
     "EmailInboxAdapter",
+    "FirecrawlAdapter",
 ]

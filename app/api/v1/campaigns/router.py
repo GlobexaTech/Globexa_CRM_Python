@@ -351,7 +351,7 @@ async def send_campaign(
                 raise HTTPException(status_code=400, detail="Daily sending limit reached for this domain")
 
     # Queue campaign for sending
-    from app.workers.tasks.campaign_tasks import send_campaign_task
+    from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
     send_campaign_task.delay(str(campaign_id), str(user.id))
 
     campaign.status = CampaignStatusEnum.SENDING
@@ -433,7 +433,7 @@ async def resume_campaign(
     if campaign.status != CampaignStatusEnum.PAUSED:
         raise HTTPException(status_code=400, detail="Can only resume paused campaigns")
 
-    from app.workers.tasks.campaign_tasks import send_campaign_task
+    from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
     send_campaign_task.delay(str(campaign_id), str(current_user[0].id))
 
     campaign.status = CampaignStatusEnum.SENDING
