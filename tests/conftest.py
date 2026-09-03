@@ -9,9 +9,16 @@ from typing import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
-from app.core.database import engine, get_db
+from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models import (
@@ -26,10 +33,21 @@ from app.models import (
 import app.middleware.tenant as tenant_middleware
 
 
+# pytest-asyncio uses a fresh event loop for each test by default. A pooled
+# asyncpg connection is bound to the loop that created it and therefore cannot
+# be reused safely by a later test loop. NullPool keeps the production pool
+# untouched while ensuring every test gets a connection created on its own loop.
+test_engine = create_async_engine(
+    get_settings().database.url,
+    poolclass=NullPool,
+    echo=False,
+)
+
+
 @pytest_asyncio.fixture
 async def db_connection() -> AsyncGenerator[AsyncConnection, None]:
     """Open an isolated outer transaction against the migrated test database."""
-    async with engine.connect() as connection:
+    async with test_engine.connect() as connection:
         transaction = await connection.begin()
         try:
             yield connection
