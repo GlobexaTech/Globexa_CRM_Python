@@ -90,6 +90,10 @@ jobs:
           python - <<'PY'
           from app.workers.celery_app import celery_app
 
+          # Celery imports configured include modules lazily when a worker starts.
+          # Force the same default-module import here before checking the registry.
+          celery_app.loader.import_default_modules()
+
           required = {
               "app.workers.tasks.campaign_tasks_v2.process_scheduled_campaigns",
               "app.workers.tasks.campaign_tasks_v2.retry_failed_emails",
