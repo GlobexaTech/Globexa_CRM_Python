@@ -23,8 +23,7 @@ WORKDIR /app
 # Install Python dependencies
 COPY pyproject.toml ./
 RUN pip install --upgrade pip && \
-    pip install -e ".[dev]" && \
-    pip install 'bcrypt<5' --upgrade
+    pip install -e ".[dev]"
 
 # Copy application code
 COPY . .
