@@ -1,0 +1,105 @@
+name: Checkpoint 1D Verification
+
+on:
+  push:
+    branches:
+      - checkpoint-1d-final-fixes
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: globexa_crm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d globexa_crm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_ENVIRONMENT: testing
+      APP_DEBUG: "false"
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: "5432"
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: globexa_crm
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+      CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/0
+      SECURITY_SECRET_KEY: checkpoint-1d-ci-secret-key-minimum-32-characters
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+          pip install "bcrypt<5" --upgrade
+
+      - name: Compile Python sources
+        run: python -m compileall app alembic demo.py
+
+      - name: Verify SQLAlchemy mappers
+        run: |
+          python - <<'PY'
+          from sqlalchemy.orm import configure_mappers
+          from app import models  # noqa: F401
+          configure_mappers()
+          print("MAPPERS_OK")
+          PY
+
+      - name: Apply Alembic migrations
+        run: |
+          alembic upgrade head
+          alembic current
+          alembic heads
+
+      - name: Verify Celery task registration
+        run: |
+          python - <<'PY'
+          from app.workers.celery_app import celery_app
+
+          required = {
+              "app.workers.tasks.campaign_tasks_v2.process_scheduled_campaigns",
+              "app.workers.tasks.campaign_tasks_v2.retry_failed_emails",
+              "app.workers.tasks.integration_tasks_v2.sync_integration_task",
+          }
+          missing = required.difference(celery_app.tasks.keys())
+          if missing:
+              raise SystemExit(f"Missing Celery tasks: {sorted(missing)}")
+          print("CELERY_TASKS_OK")
+          PY
+
+      - name: Run test suite
+        run: pytest -q

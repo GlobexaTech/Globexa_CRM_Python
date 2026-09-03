@@ -1,87 +1,95 @@
 """
-Test configuration and fixtures.
+Integration-test fixtures for the migrated Globexa CRM runtime.
+
+Tests use the configured PostgreSQL database inside one outer transaction per
+test. Application commits are isolated with savepoints and rolled back after
+each test, so Alembic remains the schema authority and test data never persists.
 """
-import pytest
-import asyncio
 from typing import AsyncGenerator
-from uuid import uuid4
-from httpx import AsyncClient, ASGITransport
 
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
+
+from app.core.database import engine, get_db
+from app.core.security import create_access_token, hash_password
 from app.main import app
-from app.core.database import get_db, engine, Base
-from app.core.config import Settings
-from app.models import Tenant, User, Membership, RoleEnum, PackageEnum, Subscription, SubscriptionStatusEnum
+from app.models import (
+    Membership,
+    PackageEnum,
+    RoleEnum,
+    Subscription,
+    SubscriptionStatusEnum,
+    Tenant,
+    User,
+)
+import app.middleware.tenant as tenant_middleware
 
 
-# Test settings
-class TestSettings(Settings):
-    app_env: str = "test"
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/globexa_crm_test"
-    redis_url: str = "redis://localhost:6379/1"
-    secret_key: str = "test-secret-key-for-testing-only-32-chars-minimum"
-    google_client_id: str = ""
-    google_client_secret: str = ""
+@pytest_asyncio.fixture
+async def db_connection() -> AsyncGenerator[AsyncConnection, None]:
+    """Open an isolated outer transaction against the migrated test database."""
+    async with engine.connect() as connection:
+        transaction = await connection.begin()
+        try:
+            yield connection
+        finally:
+            if transaction.is_active:
+                await transaction.rollback()
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture(scope="session")
-async def test_engine():
-    """Create test database engine."""
-    # For now, use the main database with a test schema
-    # In CI, this would be a separate test database
-    from sqlalchemy.ext.asyncio import create_async_engine
-    test_engine = create_async_engine(
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/globexa_crm_test",
-        poolclass=None,
+@pytest_asyncio.fixture
+async def db_session(
+    db_connection: AsyncConnection,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Create a session whose commits stay inside the test transaction."""
+    session_factory = async_sessionmaker(
+        bind=db_connection,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+        join_transaction_mode="create_savepoint",
     )
-    
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield test_engine
-    
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await test_engine.dispose()
-
-
-@pytest.fixture
-async def db_session(test_engine):
-    """Create a database session for testing."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-    
-    async_session = async_sessionmaker(test_engine, expire_on_commit=False)
-    async with async_session() as session:
+    async with session_factory() as session:
         yield session
 
 
-@pytest.fixture
-async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
-    """Create test client with database override."""
-    from app.core.database import AsyncSessionLocal
-    
+@pytest_asyncio.fixture
+async def client(
+    db_session: AsyncSession,
+    db_connection: AsyncConnection,
+    monkeypatch,
+) -> AsyncGenerator[AsyncClient, None]:
+    """Create an API client using the same isolated database transaction."""
+    middleware_session_factory = async_sessionmaker(
+        bind=db_connection,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+        join_transaction_mode="create_savepoint",
+    )
+    monkeypatch.setattr(
+        tenant_middleware,
+        "AsyncSessionLocal",
+        middleware_session_factory,
+    )
+
     async def override_get_db():
         yield db_session
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
-    
-    app.dependency_overrides.clear()
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
 
 
-@pytest.fixture
-async def test_tenant(db_session) -> Tenant:
-    """Create a test tenant."""
+@pytest_asyncio.fixture
+async def test_tenant(db_session: AsyncSession) -> Tenant:
+    """Create the primary tenant for a test."""
     tenant = Tenant(
         name="Test Tenant",
         slug="test-tenant",
@@ -89,8 +97,7 @@ async def test_tenant(db_session) -> Tenant:
     )
     db_session.add(tenant)
     await db_session.flush()
-    
-    # Create subscription
+
     subscription = Subscription(
         tenant_id=tenant.id,
         package=PackageEnum.STARTER,
@@ -102,20 +109,19 @@ async def test_tenant(db_session) -> Tenant:
     return tenant
 
 
-@pytest.fixture
-async def test_user(db_session, test_tenant) -> User:
-    """Create a test user."""
+@pytest_asyncio.fixture
+async def test_user(db_session: AsyncSession, test_tenant: Tenant) -> User:
+    """Create an active owner with a real bcrypt password hash."""
     user = User(
         email="test@example.com",
-        hashed_password="$2b$12$testhashedpassword",  # bcrypt hash of "password"
+        hashed_password=hash_password("password"),
         full_name="Test User",
         is_active=True,
         email_verified=True,
     )
     db_session.add(user)
     await db_session.flush()
-    
-    # Create membership
+
     membership = Membership(
         user_id=user.id,
         tenant_id=test_tenant.id,
@@ -128,15 +134,18 @@ async def test_user(db_session, test_tenant) -> User:
     return user
 
 
-@pytest.fixture
-async def auth_headers(client, test_user, test_tenant) -> dict:
-    """Get auth headers for test user."""
-    from app.core.security import create_access_token
-    
-    token = create_access_token({
-        "sub": str(test_user.id),
-        "tenant_id": str(test_tenant.id),
-        "role": RoleEnum.OWNER.value,
-        "email": test_user.email,
-    })
-    return {"Authorization": f"Bearer {token}"}
+@pytest_asyncio.fixture
+async def auth_headers(test_user: User, test_tenant: Tenant) -> dict[str, str]:
+    """Create authenticated headers bound to the fixture tenant."""
+    token = create_access_token(
+        {
+            "sub": str(test_user.id),
+            "tenant_id": str(test_tenant.id),
+            "role": RoleEnum.OWNER.value,
+            "email": test_user.email,
+        }
+    )
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Tenant-ID": str(test_tenant.id),
+    }

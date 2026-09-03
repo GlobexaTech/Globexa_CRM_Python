@@ -12,7 +12,30 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class AppSettings(BaseSettings):
+class EnvFirstSettings(BaseSettings):
+    """Base settings model with deterministic env/.env > init/YAML precedence."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        # Environment and .env values must override YAML values supplied as init kwargs.
+        return env_settings, dotenv_settings, init_settings, file_secret_settings
+
+
+class AppSettings(EnvFirstSettings):
     name: str = "Globexa CRM"
     version: str = "0.1.0"
     environment: str = "development"
@@ -24,7 +47,7 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="APP_", extra="ignore")
 
 
-class DatabaseSettings(BaseSettings):
+class DatabaseSettings(EnvFirstSettings):
     host: str = "localhost"
     port: int = 5432
     username: str = "postgres"
@@ -55,7 +78,7 @@ class DatabaseSettings(BaseSettings):
         )
 
 
-class RedisSettings(BaseSettings):
+class RedisSettings(EnvFirstSettings):
     host: str = "localhost"
     port: int = 6379
     db: int = 0
@@ -71,9 +94,9 @@ class RedisSettings(BaseSettings):
         return f"redis://{auth}{self.host}:{self.port}/{self.db}"
 
 
-class FirecrawlSettings(BaseSettings):
+class FirecrawlSettings(EnvFirstSettings):
     api_key: str = ""
-    
+
     model_config = SettingsConfigDict(env_prefix="FIRECRAWL_", extra="ignore")
 
     @field_validator("api_key", mode="before")
@@ -84,7 +107,7 @@ class FirecrawlSettings(BaseSettings):
         return str(v)
 
 
-class SecuritySettings(BaseSettings):
+class SecuritySettings(EnvFirstSettings):
     secret_key: str = "CHANGE_ME_IN_PRODUCTION_USE_STRONG_RANDOM_KEY_MIN_32_CHARS"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
@@ -102,7 +125,7 @@ class SecuritySettings(BaseSettings):
         return v
 
 
-class GoogleOAuthSettings(BaseSettings):
+class GoogleOAuthSettings(EnvFirstSettings):
     client_id: str = ""
     client_secret: str = ""
     redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
@@ -115,7 +138,7 @@ class GoogleOAuthSettings(BaseSettings):
         return bool(self.client_id and self.client_secret)
 
 
-class LocalAISettings(BaseSettings):
+class LocalAISettings(EnvFirstSettings):
     enabled: bool = True
     base_url: str = "http://localhost:11434"
     default_model: str = "llama3.2:3b"
@@ -133,7 +156,7 @@ class LocalAISettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OLLAMA_", extra="ignore", nested_delimiter="__")
 
 
-class CloudProviderSettings(BaseSettings):
+class CloudProviderSettings(EnvFirstSettings):
     enabled: bool = False
     api_key_env: str = ""
     base_url: str = ""
@@ -148,21 +171,21 @@ class CloudProviderSettings(BaseSettings):
         return None
 
 
-class CloudAISettings(BaseSettings):
+class CloudAISettings(EnvFirstSettings):
     default_provider: str = "nvidia"
     providers: Dict[str, CloudProviderSettings] = {}
 
     model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
 
 
-class AIUsageLedgerSettings(BaseSettings):
+class AIUsageLedgerSettings(EnvFirstSettings):
     enabled: bool = True
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
 
 
-class AIRouterSettings(BaseSettings):
+class AIRouterSettings(EnvFirstSettings):
     local: LocalAISettings = LocalAISettings()
     cloud: CloudAISettings = CloudAISettings()
     usage_ledger: AIUsageLedgerSettings = AIUsageLedgerSettings()
@@ -170,7 +193,7 @@ class AIRouterSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", nested_delimiter="__")
 
 
-class EmailProviderSettings(BaseSettings):
+class EmailProviderSettings(EnvFirstSettings):
     enabled: bool = False
     api_key_env: str = ""
     webhook_secret_env: str = ""
@@ -186,7 +209,7 @@ class EmailProviderSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
 
-class EmailSettings(BaseSettings):
+class EmailSettings(EnvFirstSettings):
     default_provider: str = "resend"
     providers: Dict[str, EmailProviderSettings] = {}
     sending_domains: Dict[str, Any] = {}
@@ -194,26 +217,26 @@ class EmailSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
 
-class CampaignQueueSettings(BaseSettings):
+class CampaignQueueSettings(EnvFirstSettings):
     batch_size: int = 50
     throttle_per_second: int = 10
     max_retries: int = 3
     retry_delay_seconds: int = 60
 
 
-class CampaignSequenceSettings(BaseSettings):
+class CampaignSequenceSettings(EnvFirstSettings):
     max_steps: int = 20
     default_interval_days: int = 2
 
 
-class CampaignSettings(BaseSettings):
+class CampaignSettings(EnvFirstSettings):
     queue: CampaignQueueSettings = CampaignQueueSettings()
     sequence: CampaignSequenceSettings = CampaignSequenceSettings()
 
     model_config = SettingsConfigDict(extra="ignore")
 
 
-class CelerySettings(BaseSettings):
+class CelerySettings(EnvFirstSettings):
     broker_url: str = "redis://localhost:6379/0"
     result_backend: str = "redis://localhost:6379/0"
     task_serializer: str = "json"
@@ -228,11 +251,12 @@ class CelerySettings(BaseSettings):
     worker_max_tasks_per_child: int = 1000
     beat_schedule: Dict[str, Any] = {}
 
-    # No env_prefix - use top-level env_nested_delimiter
-    model_config = SettingsConfigDict(extra="ignore")
+    # Supports CELERY_BROKER_URL/CELERY_RESULT_BACKEND as well as
+    # top-level CELERY__BROKER_URL/CELERY__RESULT_BACKEND.
+    model_config = SettingsConfigDict(env_prefix="CELERY_", extra="ignore")
 
 
-class LoggingSettings(BaseSettings):
+class LoggingSettings(EnvFirstSettings):
     level: str = "INFO"
     format: str = "json"
     output: str = "stdout"
@@ -241,14 +265,14 @@ class LoggingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LOG_", extra="ignore")
 
 
-class PackageFeatureSettings(BaseSettings):
+class PackageFeatureSettings(EnvFirstSettings):
     features: Dict[str, bool] = {}
     limits: Dict[str, int] = {}
 
     model_config = SettingsConfigDict(extra="ignore")
 
 
-class PackageSettings(BaseSettings):
+class PackageSettings(EnvFirstSettings):
     STARTER: PackageFeatureSettings = PackageFeatureSettings()
     GROWTH: PackageFeatureSettings = PackageFeatureSettings()
     AI_PRO: PackageFeatureSettings = PackageFeatureSettings()
@@ -257,7 +281,7 @@ class PackageSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
 
-class Settings(BaseSettings):
+class Settings(EnvFirstSettings):
     """Main settings container loading from YAML + env vars."""
 
     app: AppSettings = AppSettings()
@@ -272,9 +296,6 @@ class Settings(BaseSettings):
     celery: CelerySettings = CelerySettings()
     logging: LoggingSettings = LoggingSettings()
     packages: PackageSettings = PackageSettings()
-
-    # Flat properties for backward compatibility with tests
-    # FIRECRAWL_API_KEY: Optional[str] = None  # Disabled to avoid nested parsing conflicts
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -306,46 +327,31 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_yaml(cls, yaml_path: str = "config.yaml") -> "Settings":
-        """Load settings from YAML file, then override with environment variables.
-        
+        """Load settings from YAML with environment overrides.
+
         Priority (highest to lowest):
-        1. Environment variables (highest)
-        2. YAML config file
-        3. Default values (lowest)
-        
-        Pydantic Settings naturally gives env vars priority over init kwargs.
+        1. Process environment variables
+        2. .env file
+        3. YAML config file
+        4. Model defaults
         """
         path = Path(yaml_path)
         if not path.exists():
-            # Return default settings if no config file
             return cls()
 
         with open(path, "r") as f:
             yaml_data = yaml.safe_load(f) or {}
 
-        # Build init kwargs directly from YAML
-        # We need to handle nested settings properly
-        kwargs = {}
-        
         def process_value(v):
-            """Convert YAML values to appropriate Python types for settings."""
+            """Convert nested YAML structures without mutating the source mapping."""
             if isinstance(v, dict):
-                # Recursively process nested dicts
                 return {k2: process_value(v2) for k2, v2 in v.items()}
-            elif isinstance(v, list):
+            if isinstance(v, list):
                 return [process_value(item) for item in v]
-            else:
-                # Return as-is for primitives (str, int, float, bool, None)
-                return v
-        
-        # Use the nested structure directly as kwargs
-        for key, value in yaml_data.items():
-            kwargs[key] = process_value(value)
+            return v
 
-        # Create settings with YAML data as kwargs
-        # Pydantic will then overlay env vars on top (since env vars have higher priority)
-        settings = cls(**kwargs)
-        return settings
+        kwargs = {key: process_value(value) for key, value in yaml_data.items()}
+        return cls(**kwargs)
 
 
 @lru_cache
@@ -354,5 +360,6 @@ def get_settings() -> Settings:
     return Settings.from_yaml()
 
 
-# Convenience exports - lazy loading to allow env var overrides in tests
-# settings = get_settings()
+# Backward-compatible module-level settings object for legacy imports.
+# Environment variables are read before application import in normal runtime.
+settings = get_settings()
