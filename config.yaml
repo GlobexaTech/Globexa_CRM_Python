@@ -34,7 +34,7 @@ redis:
   max_connections: 50
 
 firecrawl:
-  api_key: ""
+  api_key: null
 
 security:
   secret_key: "CHANGE_ME_IN_PRODUCTION_USE_STRONG_RANDOM_KEY"
@@ -43,6 +43,7 @@ security:
   refresh_token_expire_days: 30
   password_min_length: 8
   bcrypt_rounds: 12
+  credential_encryption_key: ""  # Set via SECURITY_CREDENTIAL_ENCRYPTION_KEY env var in production
 
 google_oauth:
   client_id: ""

@@ -19,6 +19,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
+from app.core.tenant_context import TenantContext, tenant_db_context, tenant_db_context_optional
+
 
 E = TypeVar("E", bound=PyEnum)
 

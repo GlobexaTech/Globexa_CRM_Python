@@ -11,6 +11,8 @@ import structlog
 
 from app.core.config import get_settings
 from app.core.database import init_db, close_db, engine
+from app.core.rate_limiter import rate_limit_middleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.api.v1.auth import router as auth_router
 from app.api.v1.tenants import router as tenants_router
@@ -87,6 +89,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Tenant middleware
 app.add_middleware(TenantMiddleware, default_tenant_slug="globexatech" if _get_settings().app.debug else None)

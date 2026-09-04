@@ -95,15 +95,15 @@ class RedisSettings(EnvFirstSettings):
 
 
 class FirecrawlSettings(EnvFirstSettings):
-    api_key: str = ""
+    api_key: Optional[str] = None
 
     model_config = SettingsConfigDict(env_prefix="FIRECRAWL_", extra="ignore")
 
     @field_validator("api_key", mode="before")
     @classmethod
     def validate_api_key(cls, v):
-        if v is None:
-            return ""
+        if v is None or v == "":
+            return None
         return str(v)
 
 
@@ -114,6 +114,7 @@ class SecuritySettings(EnvFirstSettings):
     refresh_token_expire_days: int = 30
     password_min_length: int = 8
     bcrypt_rounds: int = 12
+    credential_encryption_key: str = ""
 
     model_config = SettingsConfigDict(env_prefix="SECURITY_", extra="ignore")
 
@@ -122,6 +123,16 @@ class SecuritySettings(EnvFirstSettings):
     def validate_secret_key(cls, v: str) -> str:
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        return v
+
+    @field_validator("credential_encryption_key")
+    @classmethod
+    def validate_credential_encryption_key(cls, v: str) -> str:
+        # Check environment directly to avoid circular dependency
+        import os
+        env = os.getenv("APP_ENVIRONMENT", "development")
+        if env == "production" and not v:
+            raise ValueError("SECURITY_CREDENTIAL_ENCRYPTION_KEY must be set in production")
         return v
 
 
@@ -288,7 +299,7 @@ class Settings(EnvFirstSettings):
     database: DatabaseSettings = DatabaseSettings()
     redis: RedisSettings = RedisSettings()
     security: SecuritySettings = SecuritySettings()
-    firecrawl: FirecrawlSettings = Field(default_factory=FirecrawlSettings)
+    firecrawl_api_key: Optional[str] = None
     google_oauth: GoogleOAuthSettings = GoogleOAuthSettings()
     ai_router: AIRouterSettings = AIRouterSettings()
     email: EmailSettings = EmailSettings()

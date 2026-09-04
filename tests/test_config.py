@@ -83,7 +83,7 @@ def test_config_loads_conventional_env_overrides(monkeypatch, tmp_path):
     assert settings.app.environment == "testing"
     assert settings.database.host == "127.0.0.1"
     assert settings.security.secret_key == "test-secret-key-min-32-chars-long"
-    assert settings.firecrawl.api_key == "fc_test_key_123"
+    assert settings.firecrawl_api_key == "fc_test_key_123"
     assert settings.celery.broker_url == "redis://127.0.0.1:6379/9"
 
 
