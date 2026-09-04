@@ -1,23 +1,22 @@
-"""
-Database configuration and session management for Globexa CRM.
-Uses SQLAlchemy 2.0 async with asyncpg.
-"""
+"""Database configuration and session management for Globexa CRM.
+Uses SQLAlchemy 2.0 async with asyncpg."""
 from contextlib import asynccontextmanager
 from typing import Type, TypeVar, AsyncGenerator
 from enum import Enum as PyEnum
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy import Enum as PGEnum
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.db_session import engine, AsyncSessionLocal, create_engine
+from app.core.tenant_context import set_tenant_context, clear_tenant_context, tenant_db_context, get_tenant_db
 
 
 E = TypeVar("E", bound=PyEnum)
@@ -36,47 +35,10 @@ def pg_enum(enum_cls: Type[E], name: str) -> PGEnum:
 
 settings = get_settings()
 
+
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
     pass
-
-
-# Create async engine
-def create_engine() -> AsyncEngine:
-    """Create async database engine."""
-    # Use NullPool for worker processes to avoid connection pooling issues with forking
-    # In production, you might want to use a proper connection pool
-    use_null_pool = settings.app.environment in ("test", "development")
-    
-    kwargs = {
-        "url": settings.database.url,
-        "pool_recycle": settings.database.pool_recycle,
-        "pool_pre_ping": True,
-        "echo": settings.database.echo,
-    }
-    
-    if not use_null_pool:
-        kwargs.update({
-            "pool_size": settings.database.pool_size,
-            "max_overflow": settings.database.max_overflow,
-            "pool_timeout": settings.database.pool_timeout,
-        })
-    else:
-        kwargs["poolclass"] = NullPool
-    
-    return create_async_engine(**kwargs)
-
-
-engine = create_engine()
-
-# Async session factory
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

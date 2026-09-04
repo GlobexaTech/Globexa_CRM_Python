@@ -11,6 +11,8 @@ import structlog
 
 from app.core.config import get_settings
 from app.core.database import init_db, close_db, engine
+from app.core.rate_limiter import RateLimitMiddleware, get_rate_limiter
+from app.core.security_headers import SecurityHeadersMiddleware, TrustedHostMiddleware
 from app.middleware.tenant import TenantMiddleware
 from app.api.v1.auth import router as auth_router
 from app.api.v1.tenants import router as tenants_router
@@ -26,6 +28,7 @@ from app.api.v1.tasks import activities_router
 from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.ai import router as ai_router
+from app.api.v1.webhooks import webhook_router
 
 # Lazy-load settings to avoid caching at import time
 def _get_settings():
@@ -87,6 +90,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security headers middleware (add early for all responses)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Trusted host middleware (production only)
+allowed_hosts = _get_settings().app.cors_origins
+if allowed_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
+# Rate limiting middleware
+app.add_middleware(RateLimitMiddleware, rate_limiter=get_rate_limiter())
 
 # Tenant middleware
 app.add_middleware(TenantMiddleware, default_tenant_slug="globexatech" if _get_settings().app.debug else None)
@@ -150,6 +164,7 @@ app.include_router(activities_router, prefix="/api/v1")
 app.include_router(campaigns_router, prefix="/api/v1")
 app.include_router(integrations_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
+app.include_router(webhook_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")

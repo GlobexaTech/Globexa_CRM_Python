@@ -313,39 +313,58 @@ class Settings(BaseSettings):
         2. YAML config file
         3. Default values (lowest)
         
-        Pydantic Settings naturally gives env vars priority over init kwargs.
+        We use pydantic-settings' built-in env var support by not passing
+        the YAML values as kwargs, but instead temporarily setting them as
+        environment variables with a lower priority prefix, then loading settings,
+        then restoring the environment.
         """
+        import os
+        
         path = Path(yaml_path)
         if not path.exists():
             # Return default settings if no config file
             return cls()
-
+        
         with open(path, "r") as f:
             yaml_data = yaml.safe_load(f) or {}
-
-        # Build init kwargs directly from YAML
-        # We need to handle nested settings properly
-        kwargs = {}
         
-        def process_value(v):
-            """Convert YAML values to appropriate Python types for settings."""
-            if isinstance(v, dict):
-                # Recursively process nested dicts
-                return {k2: process_value(v2) for k2, v2 in v.items()}
-            elif isinstance(v, list):
-                return [process_value(item) for item in v]
-            else:
-                # Return as-is for primitives (str, int, float, bool, None)
-                return v
+        # Flatten YAML to environment variables with a special prefix
+        # that won't conflict with actual env vars
+        YAML_PREFIX = "_YAML_"
+        original_env = {}
         
-        # Use the nested structure directly as kwargs
-        for key, value in yaml_data.items():
-            kwargs[key] = process_value(value)
-
-        # Create settings with YAML data as kwargs
-        # Pydantic will then overlay env vars on top (since env vars have higher priority)
-        settings = cls(**kwargs)
-        return settings
+        def flatten_dict(d: dict, prefix: str = "") -> dict:
+            """Flatten nested dict to env var format."""
+            result = {}
+            for k, v in d.items():
+                new_key = f"{prefix}{k.upper()}"
+                if isinstance(v, dict):
+                    result.update(flatten_dict(v, f"{new_key}__"))
+                elif isinstance(v, list):
+                    result[new_key] = ",".join(str(item) for item in v)
+                else:
+                    result[new_key] = str(v)
+            return result
+        
+        # Store original env vars and set YAML values
+        flat_yaml = flatten_dict(yaml_data, YAML_PREFIX)
+        for key, value in flat_yaml.items():
+            if key in os.environ:
+                original_env[key] = os.environ[key]
+            os.environ[key] = value
+        
+        try:
+            # Now create settings - pydantic will use real env vars (which override YAML)
+            # and fall back to our YAML env vars for unset ones
+            settings = cls()
+            return settings
+        finally:
+            # Restore original environment
+            for key, value in flat_yaml.items():
+                if key in original_env:
+                    os.environ[key] = original_env[key]
+                else:
+                    os.environ.pop(key, None)
 
 
 @lru_cache
