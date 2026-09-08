@@ -294,10 +294,38 @@ test("deal creation, drag, keyboard movement and atomic stage reorder persist", 
   await expect(dialog).not.toBeVisible();
   expect(deal.currency).toBe("EUR");
   expect(deal.value).toBe(12345);
-  await page
+  const card = page
     .getByRole("article")
-    .filter({ has: page.getByRole("button", { name: title, exact: false }) })
-    .dragTo(page.getByRole("region", { name: "Qualified stage", exact: true }));
+    .filter({ has: page.getByRole("button", { name: title, exact: false }) });
+  const qualified = page.getByRole("region", {
+    name: "Qualified stage",
+    exact: true,
+  });
+  await expect(card).toHaveAttribute("draggable", "true");
+  await expect(
+    card.getByRole("combobox", { name: `Stage for ${title}`, exact: true }),
+  ).toBeEnabled();
+  const moved = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "POST" &&
+      url.pathname === `/api/crm/deals/${deal.id}/move` &&
+      url.searchParams.get("stage_id") === rec.stage2
+    );
+  });
+  // Start in card padding, away from nested inputs/links. Two actual pointer
+  // moves over the destination reliably dispatch native dragover in Chromium.
+  await card.hover({ position: { x: 8, y: 8 } });
+  await page.mouse.down();
+  try {
+    await qualified.hover({ position: { x: 20, y: 120 } });
+    await qualified.hover({ position: { x: 24, y: 124 } });
+  } finally {
+    await page.mouse.up();
+  }
+  const moveResponse = await moved;
+  expect(moveResponse.status()).toBe(200);
+  expect((await moveResponse.json()).stage_id).toBe(rec.stage2);
   await expect
     .poll(
       async () => (await (await api.get(`/deals/${deal.id}`)).json()).stage_id,
