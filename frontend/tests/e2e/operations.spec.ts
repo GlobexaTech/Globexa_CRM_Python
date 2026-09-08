@@ -463,7 +463,20 @@ test("workflow definition versions, enabled state and real event execution creat
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Edit definition" }).click();
   await dialog.getByLabel("Workflow name").fill(name + " revised");
+  const savedResponse = page.waitForResponse(
+    (result) =>
+      result.url().endsWith(`/api/crm/operations/workflows/${id}`) &&
+      result.request().method() === "PUT",
+  );
   await dialog.getByRole("button", { name: "Save disabled workflow" }).click();
+  const saved = await savedResponse;
+  expect(saved.status()).toBe(200);
+  expect(await saved.json()).toMatchObject({
+    id,
+    name: name + " revised",
+    version: 2,
+    enabled: false,
+  });
   const updated = await bodyOf<{ version: number; enabled: boolean }>(
     page,
     session,
@@ -471,6 +484,9 @@ test("workflow definition versions, enabled state and real event execution creat
   );
   expect(updated.version).toBe(2);
   expect(updated.enabled).toBe(false);
+  await expect(
+    dialog.getByText("Disabled · Version 2", { exact: true }),
+  ).toBeVisible();
 });
 
 test("provider capabilities, OAuth callback, refresh, sync history and disconnect remain backend authoritative", async ({
