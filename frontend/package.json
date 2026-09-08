@@ -22,6 +22,11 @@
     "redis": "^6.2.1",
     "server-only": "^0.0.1"
   },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "js-yaml": "4.3.2"
+    }
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",

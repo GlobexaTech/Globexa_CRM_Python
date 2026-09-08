@@ -112,6 +112,8 @@ The desktop sidebar becomes a mobile navigation dialog. Tables and the board ret
 
 The backend's restricted database role and FORCE RLS remain active. Sessions are server-held and encrypted; credentials are excluded from client storage and public evidence. Same-origin checks, workspace versioning, least-privilege permissions, no uncertain write replay and non-autonomous AI boundaries are covered by executable tests. CI also runs dependency, static security and source-secret scans and inspects the production image's non-root user.
 
+The API generator's Redocly dependency pins a vulnerable YAML parser. A scoped npm override uses the patched `js-yaml` 4.3.2 for [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh); the lockfile reuses that patched version already required by ESLint. Contract generation remains unchanged, and CI continues to reject any dependency vulnerability at low severity or above.
+
 ## Backend Changes
 
 Existing migrations and all 116 original backend tests are preserved. No database migration was added. The following changes repair required UI contracts:
