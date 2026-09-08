@@ -321,5 +321,17 @@ def get_role_permissions(role: RoleEnum) -> Set[Permission]:
 ROLE_PERMISSIONS[RoleEnum.AI_AGENT] = {Permission.LEADS_READ, Permission.AI_CHAT}
 ROLE_HIERARCHY[RoleEnum.AI_AGENT] = 0
 
+# Explicit permissions for new resources; existing role grants are unchanged.
+OPERATIONS_PERMISSIONS = {"conversations:read", "conversations:write", "conversations:send",
+                         "automation:read", "automation:write", "analytics:read", "notes:read", "notes:write"}
+ALL_PERMISSIONS.extend(sorted(OPERATIONS_PERMISSIONS))
+for role in (RoleEnum.OWNER, RoleEnum.ADMIN):
+    ROLE_PERMISSIONS[role].update(OPERATIONS_PERMISSIONS)
+for role in (RoleEnum.SALES_MANAGER, RoleEnum.SALES_EXECUTIVE):
+    ROLE_PERMISSIONS[role].update({"conversations:read", "conversations:write", "conversations:send", "notes:read", "notes:write"})
+ROLE_PERMISSIONS[RoleEnum.SALES_MANAGER].update({"analytics:read", "automation:read"})
+ROLE_PERMISSIONS[RoleEnum.MARKETING].update({"conversations:read", "conversations:write", "conversations:send", "analytics:read", "notes:read"})
+ROLE_PERMISSIONS[RoleEnum.VIEWER].add("notes:read")
+
 def may_assign_role(actor, target):
     return actor == RoleEnum.OWNER or (actor == RoleEnum.ADMIN and target not in {RoleEnum.OWNER, RoleEnum.ADMIN})

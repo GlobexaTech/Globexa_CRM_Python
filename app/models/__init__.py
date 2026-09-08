@@ -1318,7 +1318,7 @@ class SuppressionList(Base):
     reason: Mapped[str] = mapped_column(String(100), nullable=False)  # bounced, complained, unsubscribed, manual, spam
     reason_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Source
-    provider: Mapped[Optional[EmailProviderTypeEnum]] = mapped_column(Enum(EmailProviderTypeEnum), nullable=True)
+    provider: Mapped[Optional[EmailProviderTypeEnum]] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=True)
     provider_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -1892,3 +1892,5 @@ from app.models.foundation import (OAuthToken, DomainEvent, EventDelivery, Webho
 # Existing entities retain their storage and API identities.
 Webhook = WebhookEndpoint
 SyncJob = IntegrationSyncLog
+from app.models.operations import (Participant, AnalyticsEvent, OperationJob, AIInsight,
+                                   OAuthSession, WorkflowRevision)

@@ -9,6 +9,8 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.api.deps import require_permission
+from app.services.crm.serialization import scalar_response
 from app.api.deps import get_current_active_user, get_tenant_id, require_deals_read, require_deals_write, require_contacts_read, require_contacts_write, require_leads_read, require_leads_write
 from app.schemas import (
     TaskCreate,
@@ -30,7 +32,7 @@ tasks_router = APIRouter(prefix="/tasks", tags=["Tasks"])
 @tasks_router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     data: TaskCreate,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_permission("tasks:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -68,15 +70,17 @@ async def create_task(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Owner not found in this tenant")
     
+    values = data.model_dump()
+    values["owner_id"] = values.get("owner_id") or user.id
     task = Task(
-        **data.model_dump(),
+        **values,
         tenant_id=tenant_id,
         created_by_id=user.id,
     )
     db.add(task)
     await db.commit()
     await db.refresh(task)
-    return task
+    return scalar_response(TaskResponse, task)
 
 
 @tasks_router.get("", response_model=PaginatedResponse)
@@ -87,7 +91,7 @@ async def list_tasks(
     lead_id: Optional[UUID] = Query(None),
     deal_id: Optional[UUID] = Query(None),
     overdue: Optional[bool] = Query(None),
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("tasks:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -130,7 +134,7 @@ async def list_tasks(
     tasks = result.scalars().all()
     
     return PaginatedResponse.create(
-        items=[TaskResponse.model_validate(t) for t in tasks],
+        items=[scalar_response(TaskResponse, t) for t in tasks],
         total=total,
         params=params,
     )
@@ -139,7 +143,7 @@ async def list_tasks(
 @tasks_router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: UUID,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("tasks:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -159,14 +163,14 @@ async def get_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return scalar_response(TaskResponse, task)
 
 
 @tasks_router.patch("/{task_id}", response_model=TaskResponse)
 async def update_task(
     task_id: UUID,
     data: TaskUpdate,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("tasks:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -205,13 +209,13 @@ async def update_task(
     
     await db.commit()
     await db.refresh(task)
-    return task
+    return scalar_response(TaskResponse, task)
 
 
 @tasks_router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: UUID,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("tasks:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -239,7 +243,7 @@ notes_router = APIRouter(prefix="/notes", tags=["Notes"])
 @notes_router.post("", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_note(
     data: NoteCreate,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("notes:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -289,7 +293,7 @@ async def list_notes(
     deal_id: Optional[UUID] = Query(None),
     contact_id: Optional[UUID] = Query(None),
     company_id: Optional[UUID] = Query(None),
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("notes:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -325,7 +329,7 @@ async def list_notes(
 @notes_router.get("/{note_id}", response_model=NoteResponse)
 async def get_note(
     note_id: UUID,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("notes:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -345,7 +349,7 @@ async def get_note(
 async def update_note(
     note_id: UUID,
     data: NoteUpdate,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("notes:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -375,7 +379,7 @@ async def update_note(
 @notes_router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note(
     note_id: UUID,
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("notes:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -410,7 +414,7 @@ async def list_activities(
     company_id: Optional[UUID] = Query(None),
     type: Optional[str] = Query(None),
     user_id: Optional[UUID] = Query(None),
-    current_user: tuple = Depends(get_current_active_user),
+    current_user: tuple = Depends(require_permission("tasks:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):

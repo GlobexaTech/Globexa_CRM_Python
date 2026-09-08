@@ -56,6 +56,7 @@ class Workflow(TenantEntity, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
 
 class Trigger(TenantEntity, Base):
@@ -84,6 +85,9 @@ class ExecutionLog(TenantEntity, Base):
     event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domain_events.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     error_code: Mapped[str | None] = mapped_column(String(100))
+    workflow_version: Mapped[int] = mapped_column(Integer, default=1)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    snapshot: Mapped[dict] = mapped_column(JSONB, default=dict)
     __table_args__ = (UniqueConstraint("tenant_id", "workflow_id", "event_id"),)
 
 
@@ -112,12 +116,29 @@ class PlanFeature(Base):
 class Conversation(TenantEntity, Base):
     __tablename__ = "conversations"
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(30), default="email")
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("contacts.id"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id"))
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id"))
+    integration_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("integrations.id"))
+    provider_thread_id: Mapped[str | None] = mapped_column(String(255))
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    unread_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Message(TenantEntity, Base):
     __tablename__ = "messages"
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), default="inbound")
+    status: Mapped[str] = mapped_column(String(30), default="received")
+    sender: Mapped[str | None] = mapped_column(String(255))
+    recipient: Mapped[str | None] = mapped_column(String(255))
+    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    attachments: Mapped[list] = mapped_column(JSONB, default=list)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"),)
 
 
 class AgentDefinition(TenantEntity, Base):

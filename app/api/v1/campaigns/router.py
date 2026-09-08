@@ -20,6 +20,7 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
+from app.schemas.operations import CampaignCreateInput
 
 
 # =============================================================================
@@ -28,13 +29,17 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_campaign(
-    data: dict,
+    data: CampaignCreateInput,
     current_user: tuple = Depends(require_campaigns_write),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Create a new campaign."""
+    data = data.model_dump()
     user, _ = current_user
+
+    if set(data) - {"name", "description", "type", "sending_domain_id", "sender_name", "sender_email", "reply_to_email", "tags"}:
+        raise HTTPException(422, "Unsupported campaign fields")
 
     # Verify sending domain if provided
     if data.get("sending_domain_id"):
@@ -244,6 +249,8 @@ async def update_campaign(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Update a campaign."""
+    if set(data) - {"name", "description", "sender_name", "sender_email", "reply_to_email", "tags"}:
+        raise HTTPException(422, "Use lifecycle APIs for campaign state")
     user, _ = current_user
 
     result = await db.execute(
@@ -307,59 +314,10 @@ async def send_campaign(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Send or schedule a campaign."""
-    user, _ = current_user
-
-    result = await db.execute(
-        select(Campaign)
-        .where(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
-        .options(
-            selectinload(Campaign.audience),
-            selectinload(Campaign.templates),
-            selectinload(Campaign.sequences),
-        )
-    )
-    campaign = result.scalar_one_or_none()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    if campaign.status not in [CampaignStatusEnum.DRAFT, CampaignStatusEnum.SCHEDULED, CampaignStatusEnum.PAUSED]:
-        raise HTTPException(status_code=400, detail="Campaign cannot be sent in current state")
-
-    # Validate campaign has audience and templates
-    if not campaign.audience or campaign.audience.estimated_count == 0:
-        raise HTTPException(status_code=400, detail="Campaign has no audience")
-
-    if campaign.type == CampaignTypeEnum.BROADCAST and not campaign.templates:
-        raise HTTPException(status_code=400, detail="Broadcast campaign needs at least one template")
-
-    if campaign.type == CampaignTypeEnum.SEQUENCE and not campaign.sequences:
-        raise HTTPException(status_code=400, detail="Sequence campaign needs at least one sequence step")
-
-    # Check daily limit
-    sending_domain = None
-    if campaign.sending_domain_id:
-        result = await db.execute(
-            select(SendingDomain).where(SendingDomain.id == campaign.sending_domain_id)
-        )
-        sending_domain = result.scalar_one_or_none()
-
-    if sending_domain:
-        today = datetime.now(timezone.utc).date()
-        if sending_domain.last_sent_date and sending_domain.last_sent_date.date() == today:
-            if sending_domain.current_daily_count >= sending_domain.daily_limit:
-                raise HTTPException(status_code=400, detail="Daily sending limit reached for this domain")
-
-    # Queue campaign for sending
-    from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
-    send_campaign_task.delay(str(tenant_id), str(campaign_id), str(user.id))
-
-    campaign.status = CampaignStatusEnum.SENDING
-    campaign.sent_at = datetime.now(timezone.utc)
-    campaign.updated_by_id = user.id
+    from app.services.crm.campaigns import transition
+    result = await transition(db, tenant_id, current_user[0].id, campaign_id, 'launch')
     await db.commit()
-
-    return {"message": "Campaign queued for sending", "campaign_id": str(campaign_id)}
+    return result
 
 
 @router.post("/{campaign_id}/schedule", response_model=dict)
@@ -370,25 +328,10 @@ async def schedule_campaign(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Schedule a campaign for later sending."""
-    result = await db.execute(
-        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
-    )
-    campaign = result.scalar_one_or_none()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    if campaign.status != CampaignStatusEnum.DRAFT:
-        raise HTTPException(status_code=400, detail="Can only schedule draft campaigns")
-
-    if scheduled_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Scheduled time must be in the future")
-
-    campaign.status = CampaignStatusEnum.SCHEDULED
-    campaign.scheduled_at = scheduled_at
+    from app.services.crm.campaigns import transition
+    result = await transition(db, tenant_id, current_user[0].id, campaign_id, 'schedule', scheduled_at)
     await db.commit()
-
-    return {"message": "Campaign scheduled", "scheduled_at": scheduled_at.isoformat()}
+    return result
 
 
 @router.post("/{campaign_id}/pause", response_model=dict)
@@ -398,21 +341,10 @@ async def pause_campaign(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Pause a sending campaign."""
-    result = await db.execute(
-        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
-    )
-    campaign = result.scalar_one_or_none()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    if campaign.status != CampaignStatusEnum.SENDING:
-        raise HTTPException(status_code=400, detail="Can only pause sending campaigns")
-
-    campaign.status = CampaignStatusEnum.PAUSED
+    from app.services.crm.campaigns import transition
+    result = await transition(db, tenant_id, current_user[0].id, campaign_id, 'pause')
     await db.commit()
-
-    return {"message": "Campaign paused"}
+    return result
 
 
 @router.post("/{campaign_id}/resume", response_model=dict)
@@ -422,24 +354,10 @@ async def resume_campaign(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Resume a paused campaign."""
-    result = await db.execute(
-        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
-    )
-    campaign = result.scalar_one_or_none()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    if campaign.status != CampaignStatusEnum.PAUSED:
-        raise HTTPException(status_code=400, detail="Can only resume paused campaigns")
-
-    from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
-    send_campaign_task.delay(str(tenant_id), str(campaign_id), str(current_user[0].id))
-
-    campaign.status = CampaignStatusEnum.SENDING
+    from app.services.crm.campaigns import transition
+    result = await transition(db, tenant_id, current_user[0].id, campaign_id, 'resume')
     await db.commit()
-
-    return {"message": "Campaign resumed"}
+    return result
 
 
 @router.post("/{campaign_id}/cancel", response_model=dict)
@@ -449,22 +367,10 @@ async def cancel_campaign(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Cancel a campaign."""
-    result = await db.execute(
-        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
-    )
-    campaign = result.scalar_one_or_none()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    if campaign.status in [CampaignStatusEnum.SENT, CampaignStatusEnum.COMPLETED]:
-        raise HTTPException(status_code=400, detail="Cannot cancel sent or completed campaign")
-
-    campaign.status = CampaignStatusEnum.CANCELLED
-    campaign.completed_at = datetime.now(timezone.utc)
+    from app.services.crm.campaigns import transition
+    result = await transition(db, tenant_id, current_user[0].id, campaign_id, 'cancel')
     await db.commit()
-
-    return {"message": "Campaign cancelled"}
+    return result
 
 
 # =============================================================================

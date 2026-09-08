@@ -49,6 +49,8 @@ async def create_user(
 ):
     """Create a new user in the current tenant."""
     check_assignment(current_user, data.role)
+    from app.services.crm.common import meter
+    await meter(db, tenant_id, current_user[0].id, "users")
     # Check if email already exists globally
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():

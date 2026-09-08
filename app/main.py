@@ -72,6 +72,8 @@ async def lifespan(app: FastAPI):
     logger.info("Database connections closed")
 
 
+from app.core.rate_limit import enforce_rate
+
 app = FastAPI(
     title=_get_settings().app.name,
     version=_get_settings().app.version,
@@ -80,7 +82,7 @@ app = FastAPI(
     redoc_url="/redoc" if _get_settings().app.debug else None,
     openapi_url="/openapi.json" if _get_settings().app.debug else None,
     lifespan=lifespan,
-    dependencies=[Depends(protect_input)],
+    dependencies=[Depends(protect_input), Depends(enforce_rate)],
 )
 
 # CORS middleware
@@ -108,6 +110,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
+        headers=exc.headers,
     )
 
 
@@ -138,6 +141,18 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+from app.api.v1.operations import router as operations_router
+from app.services.crm.providers import ProviderFailure
+
+
+@app.exception_handler(ProviderFailure)
+async def provider_exception_handler(request: Request, exc: ProviderFailure):
+    return JSONResponse(status_code=503, content={"detail": "Provider operation unavailable", "code": exc.code})
+
+
+app.include_router(operations_router, prefix="/api/v1")
+from app.api.v1.unsubscribe import router as unsubscribe_router
+app.include_router(unsubscribe_router, prefix="/api/v1")
 app.include_router(hooks_router, prefix="/api/v1")
 app.include_router(foundation_router, prefix="/api/v1")
 app.include_router(health_router)

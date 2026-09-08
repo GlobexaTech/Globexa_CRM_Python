@@ -4,7 +4,7 @@ All AI capabilities exposed via REST API.
 """
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,12 @@ from app.services.ai import (
 )
 from app.services.ai.assistant import AIAssistantService, AssistantMessage
 
-router = APIRouter(prefix="/ai", tags=["AI"])
+async def require_durable_ai_contract(request: Request):
+    if request.method == "POST":
+        raise HTTPException(410, "Use /api/v1/operations/ai/requests with Idempotency-Key; poll the returned job")
+
+
+router = APIRouter(prefix="/ai", tags=["AI"], dependencies=[Depends(require_durable_ai_contract)])
 
 # Service instances
 lead_scoring_service = LeadScoringService()

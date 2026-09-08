@@ -72,3 +72,6 @@ dmypy.json
 
 # Ruff
 .ruff_cache/
+
+# Generated CI and API contract evidence
+evidence/

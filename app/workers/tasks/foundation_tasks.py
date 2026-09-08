@@ -14,7 +14,7 @@ def publish_outbox(tenant_id: str):
     return asyncio.run(run())
 
 
-@shared_task(autoretry_for=(ConnectionError,), retry_backoff=True, max_retries=5)
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, max_retries=5)
 def deliver_event(tenant_id: str, event_id: str):
     async def run():
         async with tenant_db_context(tenant_id) as db:
@@ -30,15 +30,14 @@ def dispatch_scheduled():
     from sqlalchemy.pool import NullPool
     from app.core.config import get_settings
     from app.models import Tenant
-    from app.workers.tasks.campaign_tasks_v2 import process_scheduled_campaigns, retry_failed_emails
-    from app.workers.tasks.integration_tasks_v2 import scheduled_integration_sync
+    from app.workers.tasks.crm_tasks import crm_tick
     async def run():
         engine = create_async_engine(get_settings().database.url, poolclass=NullPool)
         try:
             async with async_sessionmaker(engine)() as db:
                 ids = (await db.scalars(text("SELECT public.active_tenant_ids()"))).all()
             for tenant_id in ids:
-                for task in (publish_outbox, process_scheduled_campaigns, retry_failed_emails, scheduled_integration_sync):
+                for task in (publish_outbox, crm_tick):
                     task.delay(tenant_id=str(tenant_id))
             return len(ids)
         finally:

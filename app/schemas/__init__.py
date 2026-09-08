@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from app.models import LeadStatusEnum, LeadSourceEnum, TaskStatusEnum, TaskPriorityEnum
 
 
 # =============================================================================
@@ -514,11 +515,11 @@ class LeadBase(BaseSchema):
     company_id: Optional[UUID] = None
     title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    status: str = "new"
+    status: LeadStatusEnum = LeadStatusEnum.NEW
     owner_id: Optional[UUID] = None
-    source: Optional[str] = None
+    source: Optional[LeadSourceEnum] = None
     source_id: Optional[str] = Field(None, max_length=255)
-    utm_source: Optional[str] = Field(None, max_length=100)
+    utm_source: Optional[LeadSourceEnum] = Field(None, max_length=100)
     utm_medium: Optional[str] = Field(None, max_length=100)
     utm_campaign: Optional[str] = Field(None, max_length=100)
     utm_content: Optional[str] = Field(None, max_length=100)
@@ -537,11 +538,11 @@ class LeadUpdate(BaseModel):
     company_id: Optional[UUID] = None
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[LeadStatusEnum] = None
     owner_id: Optional[UUID] = None
-    source: Optional[str] = None
+    source: Optional[LeadSourceEnum] = None
     source_id: Optional[str] = Field(None, max_length=255)
-    utm_source: Optional[str] = Field(None, max_length=100)
+    utm_source: Optional[LeadSourceEnum] = Field(None, max_length=100)
     utm_medium: Optional[str] = Field(None, max_length=100)
     utm_campaign: Optional[str] = Field(None, max_length=100)
     utm_content: Optional[str] = Field(None, max_length=100)
@@ -687,8 +688,8 @@ class TaskBase(BaseSchema):
     company_id: Optional[UUID] = None
     title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    status: str = "pending"
-    priority: str = "medium"
+    status: TaskStatusEnum = TaskStatusEnum.PENDING
+    priority: TaskPriorityEnum = TaskPriorityEnum.MEDIUM
     owner_id: Optional[UUID] = None
     due_date: Optional[datetime] = None
     reminder_at: Optional[datetime] = None
@@ -708,8 +709,8 @@ class TaskUpdate(BaseModel):
     company_id: Optional[UUID] = None
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-    status: Optional[str] = None
-    priority: Optional[str] = None
+    status: Optional[TaskStatusEnum] = None
+    priority: Optional[TaskPriorityEnum] = None
     owner_id: Optional[UUID] = None
     due_date: Optional[datetime] = None
     reminder_at: Optional[datetime] = None

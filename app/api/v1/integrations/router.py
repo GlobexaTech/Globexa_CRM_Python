@@ -37,6 +37,8 @@ async def create_integration(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Create a new integration."""
+    from app.services.crm.common import meter
+    await meter(db, tenant_id, current_user[0].id, "integrations")
     user, _ = current_user
 
     # Validate required fields
@@ -414,46 +416,14 @@ async def validate_integration(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Validate integration credentials."""
-    result = await db.execute(
-        select(Integration)
-        .where(Integration.id == integration_id, Integration.tenant_id == tenant_id)
-        .options(selectinload(Integration.credentials))
-    )
-    integration = result.scalar_one_or_none()
-    if not integration:
-        raise HTTPException(status_code=404, detail="Integration not found")
-
-    if not integration.credentials:
-        raise HTTPException(status_code=400, detail="No credentials configured")
-
-    # Get active credentials
-    active_creds = [c for c in integration.credentials if c.is_active]
-    if not active_creds:
-        raise HTTPException(status_code=400, detail="No active credentials")
-
-    # Use first active credential
-    cred = active_creds[0]
-    import json
-    credentials = json.loads(cred.credentials_encrypted)
-    credentials.update({
-        "access_token": cred.access_token,
-        "refresh_token": cred.refresh_token,
-        "token_expires_at": cred.token_expires_at.isoformat() if cred.token_expires_at else None,
-    })
-
-    # Validate
-    is_valid = await integration_service.validate_integration(integration.type.value, credentials)
-    
-    for c in active_creds:
-        c.last_validated_at = datetime.now(timezone.utc)
-        c.validation_error = None if is_valid else "Validation failed"
-    
-    integration.status = IntegrationStatusEnum.CONNECTED if is_valid else IntegrationStatusEnum.ERROR
-    integration.last_sync_error = None if is_valid else "Credential validation failed"
+    from app.services.crm.common import owned
+    from app.services.crm.providers import adapter_for
+    from app.services.crm.integrations import access_token
+    integration = await owned(db, Integration, tenant_id, integration_id)
+    token = await access_token(db, tenant_id, integration)
+    result = await adapter_for(integration).health_check(token)
     await db.commit()
-
-    return {"valid": is_valid, "integration_status": integration.status.value}
+    return result
 
 
 @router.post("/{integration_id}/sync", response_model=dict)
@@ -465,41 +435,7 @@ async def sync_integration(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """Trigger integration sync."""
-    user, _ = current_user
-
-    result = await db.execute(
-        select(Integration)
-        .where(Integration.id == integration_id, Integration.tenant_id == tenant_id)
-        .options(selectinload(Integration.credentials))
-    )
-    integration = result.scalar_one_or_none()
-    if not integration:
-        raise HTTPException(status_code=404, detail="Integration not found")
-
-    if not integration.credentials:
-        raise HTTPException(status_code=400, detail="No credentials configured")
-
-    active_creds = [c for c in integration.credentials if c.is_active]
-    if not active_creds:
-        raise HTTPException(status_code=400, detail="No active credentials")
-
-    # Create sync log
-    sync_log = IntegrationSyncLog(
-        tenant_id=tenant_id,
-        integration_id=integration_id,
-        sync_type="full" if full_sync else "incremental",
-        triggered_by="manual",
-        triggered_by_user_id=user.id,
-    )
-    db.add(sync_log)
-    await db.flush()
-
-    # Queue sync task
-    from app.workers.tasks.integration_tasks_v2 import sync_integration_task
-    sync_integration_task.delay(str(tenant_id), str(integration_id), str(sync_log.id), full_sync)
-
-    return {"message": "Sync queued", "sync_log_id": str(sync_log.id)}
+    raise HTTPException(410, "Use /operations/integrations/{id}/sync with Idempotency-Key")
 
 
 @router.get("/{integration_id}/sync-logs", response_model=PaginatedResponse)

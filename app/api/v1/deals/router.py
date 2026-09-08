@@ -9,6 +9,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.services.crm.serialization import scalar_response
 from app.api.deps import get_current_active_user, require_deals_read, require_deals_write, get_tenant_id
 from app.schemas import (
     DealCreate,
@@ -341,7 +342,7 @@ async def create_deal(
     db.add(deal)
     await db.commit()
     await db.refresh(deal)
-    return deal
+    return scalar_response(DealResponse, deal)
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -395,7 +396,7 @@ async def list_deals(
     deals = result.scalars().all()
     
     return PaginatedResponse.create(
-        items=[DealResponse.model_validate(d) for d in deals],
+        items=[scalar_response(DealResponse, d) for d in deals],
         total=total,
         params=params,
     )
@@ -427,7 +428,7 @@ async def get_deal(
     deal = result.scalar_one_or_none()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-    return deal
+    return scalar_response(DealResponse, deal)
 
 
 @router.patch("/{deal_id}", response_model=DealResponse)
@@ -509,7 +510,7 @@ async def update_deal(
     deal.updated_by_id = user.id
     await db.commit()
     await db.refresh(deal)
-    return deal
+    return scalar_response(DealResponse, deal)
 
 
 @router.delete("/{deal_id}", status_code=status.HTTP_204_NO_CONTENT)

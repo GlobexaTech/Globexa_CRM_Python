@@ -1,7 +1,7 @@
 """Tenant-aware search interface; PostgreSQL FTS is the first backend."""
 from typing import Protocol
 from sqlalchemy import func, literal_column, select
-from app.models import Lead, Contact, Message, Task, Campaign, AgentDefinition
+from app.models import Lead, Contact, Message, Task, Campaign, AgentDefinition, Company, Deal, Note, Conversation
 
 
 class SearchBackend(Protocol):
@@ -14,6 +14,8 @@ class PostgresSearch:
         "contacts": (Contact, "coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' ' || coalesce(email,'')"),
         "messages": (Message, "body"), "tasks": (Task, "title"),
         "campaigns": (Campaign, "name"), "agents": (AgentDefinition, "name"),
+        "companies": (Company, "name"), "deals": (Deal, "title"),
+        "notes": (Note, "content"), "conversations": (Conversation, "subject"),
     }
 
     def __init__(self, db):
@@ -26,6 +28,7 @@ class PostgresSearch:
         vector = func.to_tsvector(literal_column("'simple'"), literal_column(expression))
         term = func.websearch_to_tsquery(literal_column("'simple'"), query)
         rank = func.ts_rank(vector, term)
-        result = await self.db.execute(select(model.id, rank.label("rank")).where(
+        result = await self.db.execute(select(model.id, rank.label("rank"), literal_column(expression).label("content")).where(
             model.tenant_id == tenant_id, vector.op("@@")(term)).order_by(rank.desc(), model.id).limit(limit))
-        return [{"id": str(row.id), "rank": row.rank, "entity": entity} for row in result]
+        return [{"id": str(row.id), "rank": row.rank, "entity": entity, "title": row.content[:120],
+                 "snippet": row.content[:300]} for row in result]
