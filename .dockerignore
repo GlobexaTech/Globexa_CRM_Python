@@ -77,3 +77,11 @@ docker-compose.override.yml
 # Backups
 *.bak
 *.backup
+
+# Private integration test settings and browser artifacts
+evidence/
+frontend/
+tests/
+scripts/checkpoint4_fixture.py
+scripts/checkpoint4_runtime.py
+scripts/checkpoint4_quota_fixture.py
