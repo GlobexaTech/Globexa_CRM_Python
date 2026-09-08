@@ -157,14 +157,14 @@ class OllamaProvider(AIProvider):
                 success=True,
             )
         except Exception as e:
-            logger.error("Ollama completion failed", error=str(e))
+            logger.error("Ollama completion failed", error=type(e).__name__)
             return AIResponse(
                 content="",
                 provider=self.provider_name,
                 model=self._model,
                 latency_ms=int((time.time() - start) * 1000),
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
             )
 
     async def stream_complete(
@@ -305,14 +305,14 @@ class OpenAICompatibleProvider(AIProvider):
                 tool_calls=tool_calls,
             )
         except Exception as e:
-            logger.error(f"{self.provider_name} completion failed", error=str(e))
+            logger.error(f"{self.provider_name} completion failed", error=type(e).__name__)
             return AIResponse(
                 content="",
                 provider=self.provider_name,
                 model=self._model,
                 latency_ms=int((time.time() - start) * 1000),
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
             )
 
     async def stream_complete(
@@ -471,14 +471,14 @@ class AnthropicProvider(AIProvider):
                 tool_calls=tool_calls,
             )
         except Exception as e:
-            logger.error("Anthropic completion failed", error=str(e))
+            logger.error("Anthropic completion failed", error=type(e).__name__)
             return AIResponse(
                 content="",
                 provider=self.provider_name,
                 model=self._model,
                 latency_ms=int((time.time() - start) * 1000),
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
             )
 
     async def stream_complete(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
@@ -542,6 +542,9 @@ class AIRouter:
                     base_url=config.base_url,
                     model=config.default_model,
                 )
+            elif provider_name == "deepseek":
+                self._cloud_providers[provider_name] = OpenAICompatibleProvider(
+                    api_key=api_key, base_url=config.base_url, model=config.default_model, provider_name="deepseek")
             elif provider_name == "openai":
                 self._cloud_providers[provider_name] = OpenAIProvider(
                     api_key=api_key,
@@ -599,73 +602,27 @@ class AIRouter:
         """
         Execute AI completion with automatic provider routing and usage logging.
         """
-        provider = self.get_provider(task_type)
-        provider_name = provider.provider_name
-        model = provider.default_model
-
-        # Execute completion
-        response = await provider.complete(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format=response_format,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
-        response.provider = provider_name
-        response.model = model
-
-        # Log usage if database session provided
-        if db and settings.ai_router.usage_ledger.enabled:
-            await self._log_usage(
-                db=db,
-                tenant_id=tenant_id,
-                user_id=user_id,
-                task_type=task_type,
-                provider=provider_name,
-                model=model,
-                response=response,
-                correlation_id=correlation_id,
-            )
-
-        return response
-
-    async def _log_usage(
-        self,
-        db: AsyncSession,
-        tenant_id: UUID,
-        user_id: Optional[UUID],
-        task_type: AITaskTypeEnum,
-        provider: str,
-        model: str,
-        response: AIResponse,
-        correlation_id: Optional[str] = None,
-    ):
-        """Log AI usage to database."""
-        try:
-            # Map provider string to enum
-            provider_enum = AIProviderEnum(provider) if provider in [p.value for p in AIProviderEnum] else AIProviderEnum.NVIDIA
-
-            usage_log = AIUsageLog(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                task_type=task_type,
-                provider=provider_enum,
-                model=model,
-                input_tokens=response.input_tokens,
-                output_tokens=response.output_tokens,
-                total_tokens=response.total_tokens,
-                latency_ms=response.latency_ms,
-                success=response.success,
-                error_message=response.error_message,
-                tool_actions=[tc.get("function", {}).get("name") for tc in (response.tool_calls or [])] if response.tool_calls else None,
-                correlation_id=correlation_id,
-            )
-            db.add(usage_log)
-            await db.flush()
-        except Exception as e:
-            logger.error("Failed to log AI usage", error=str(e))
+        from app.services.ai.gateway import AIGateway, ModelRoute, Generation
+        first = self.get_provider(task_type)
+        ordered = [first] + [p for p in self._cloud_providers.values() if p is not first]
+        class Adapter:
+            def __init__(self, provider):
+                self.provider = provider
+            async def generate(self, model, **kwargs):
+                response = await self.provider.complete(**kwargs)
+                if not response.success:
+                    raise RuntimeError("Provider failed")
+                return Generation(response.content, response.input_tokens, response.output_tokens,
+                                  tool_calls=response.tool_calls)
+        gateway = AIGateway({p.provider_name: Adapter(p) for p in ordered},
+                            [ModelRoute(p.provider_name, p.default_model) for p in ordered])
+        result = await gateway.execute(db, tenant_id, user_id, task_type, "generate",
+            prompt=prompt, system_prompt=system_prompt, temperature=temperature,
+            max_tokens=max_tokens, response_format=response_format, tools=tools, tool_choice=tool_choice)
+        return AIResponse(content=result.content, input_tokens=result.input_tokens,
+                          output_tokens=result.output_tokens, total_tokens=result.input_tokens+result.output_tokens,
+                          provider=result.provider, model=result.model, latency_ms=result.latency_ms,
+                          tool_calls=result.tool_calls)
 
     async def close(self):
         """Close all provider connections."""

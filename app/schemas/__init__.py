@@ -27,6 +27,7 @@ class TimestampMixin(BaseModel):
 # =============================================================================
 
 class UserRegister(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=1, max_length=255)
@@ -79,18 +80,25 @@ class UserBase(BaseSchema):
     email_verified: bool = False
 
 
-class UserCreate(UserBase):
-    hashed_password: Optional[str] = None
-    google_id: Optional[str] = None
+class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+    full_name: str = Field(min_length=1, max_length=255)
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    timezone: str = "UTC"
+    locale: str = "en"
+    role: str = "sales_executive"
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = Field(None, max_length=255)
+    model_config = ConfigDict(extra="forbid")
+    full_name: Optional[str] = Field(None, min_length=1, max_length=255)
     avatar_url: Optional[str] = None
     phone: Optional[str] = None
     timezone: Optional[str] = None
     locale: Optional[str] = None
-    is_active: Optional[bool] = None
 
 
 class UserResponse(UserBase, TimestampMixin):
@@ -148,12 +156,13 @@ class MembershipBase(BaseSchema):
 
 
 class MembershipCreate(BaseModel):
-    user_id: UUID
+    model_config = ConfigDict(extra="forbid")
     role: str = "sales_executive"
     is_default: bool = False
 
 
 class MembershipUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     role: Optional[str] = None
     is_default: Optional[bool] = None
 

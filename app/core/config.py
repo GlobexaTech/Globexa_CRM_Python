@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from functools import lru_cache
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,7 +40,8 @@ class AppSettings(EnvFirstSettings):
     version: str = "0.1.0"
     environment: str = "development"
     debug: bool = True
-    host: str = "0.0.0.0"
+    # Container listen address; published ports are controlled by deployment.
+    host: str = "0.0.0.0"  # nosec B104
     port: int = 8000
     cors_origins: List[str] = []
 
@@ -109,6 +110,7 @@ class FirecrawlSettings(EnvFirstSettings):
 
 class SecuritySettings(EnvFirstSettings):
     secret_key: str = "CHANGE_ME_IN_PRODUCTION_USE_STRONG_RANDOM_KEY_MIN_32_CHARS"
+    credential_encryption_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
@@ -304,6 +306,29 @@ class Settings(EnvFirstSettings):
         extra="ignore",
         env_nested_delimiter="__",
     )
+
+    @model_validator(mode="after")
+    def validate_production(self):
+        from cryptography.fernet import Fernet
+        key = self.security.credential_encryption_key
+        if key:
+            Fernet(key.encode())
+            if key == self.security.secret_key:
+                raise ValueError("Credential encryption and JWT keys must differ")
+        if self.app.environment == "production":
+            if self.app.debug or self.database.echo:
+                raise ValueError("Production debug and database echo must be disabled")
+            if not key:
+                raise ValueError("Production requires SECURITY_CREDENTIAL_ENCRYPTION_KEY")
+            if any(word in self.security.secret_key.lower() for word in ("change", "example", "your-super")):
+                raise ValueError("Production requires a strong JWT secret")
+            if self.database.username == "postgres" or self.database.password in ("", "postgres", "password"):
+                raise ValueError("Production requires a restricted database role and strong credentials")
+            if not self.redis.password:
+                raise ValueError("Production requires authenticated Redis")
+            if self.celery.accept_content != ["json"]:
+                raise ValueError("Only JSON task messages are permitted")
+        return self
 
     @property
     def DATABASE_URL(self) -> str:

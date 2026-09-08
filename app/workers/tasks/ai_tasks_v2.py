@@ -14,12 +14,12 @@ def ai_classify_task(self, tenant_id: str, user_id: str, task_type: str, prompt:
     """Run AI classification task (local preferred)."""
     logger.info("AI classify task", tenant_id=tenant_id, task_type=task_type)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type=task_type,
                 prompt=prompt,
@@ -47,7 +47,7 @@ def ai_score_lead_task(self, tenant_id: str, user_id: str, lead_data: dict, corr
     """Score a lead using AI."""
     logger.info("AI score lead task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -60,7 +60,7 @@ def ai_score_lead_task(self, tenant_id: str, user_id: str, lead_data: dict, corr
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="lead_scoring",
                 prompt=prompt,
@@ -89,7 +89,7 @@ def ai_generate_email_task(self, tenant_id: str, user_id: str, context: dict, co
     """Generate personalized email using AI."""
     logger.info("AI generate email task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -102,7 +102,7 @@ def ai_generate_email_task(self, tenant_id: str, user_id: str, context: dict, co
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="personalization",
                 prompt=prompt,
@@ -131,7 +131,7 @@ def ai_analyze_reply_task(self, tenant_id: str, user_id: str, reply_text: str, c
     """Analyze inbound reply for intent and sentiment."""
     logger.info("AI analyze reply task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -151,7 +151,7 @@ def ai_analyze_reply_task(self, tenant_id: str, user_id: str, reply_text: str, c
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="reply_analysis",
                 prompt=prompt,
@@ -180,7 +180,7 @@ def ai_next_best_action_task(self, tenant_id: str, user_id: str, lead_data: dict
     """Recommend next best action for a lead."""
     logger.info("AI next best action task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -197,7 +197,7 @@ def ai_next_best_action_task(self, tenant_id: str, user_id: str, lead_data: dict
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="next_best_action",
                 prompt=prompt,
@@ -226,7 +226,7 @@ def ai_generate_proposal_task(self, tenant_id: str, user_id: str, proposal_data:
     """Generate a sales proposal."""
     logger.info("AI generate proposal task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -245,7 +245,7 @@ def ai_generate_proposal_task(self, tenant_id: str, user_id: str, proposal_data:
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="proposal_generation",
                 prompt=prompt,
@@ -274,7 +274,7 @@ def ai_lead_miner_task(self, tenant_id: str, user_id: str, icp_criteria: dict, c
     """Run AI Lead Miner to find prospects."""
     logger.info("AI lead miner task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -290,7 +290,7 @@ def ai_lead_miner_task(self, tenant_id: str, user_id: str, icp_criteria: dict, c
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="lead_mining",
                 prompt=prompt,
@@ -319,7 +319,7 @@ def ai_chat_assistant_task(self, tenant_id: str, user_id: str, message: str, con
     """Handle AI chat assistant request with tool calling."""
     logger.info("AI chat assistant task", tenant_id=tenant_id)
     from app.services.ai.router import get_ai_router
-    from app.core.database import AsyncSessionLocal
+    from app.core.tenant_context import tenant_db_context
     import asyncio
 
     prompt = f"""
@@ -334,7 +334,7 @@ def ai_chat_assistant_task(self, tenant_id: str, user_id: str, message: str, con
 
     async def _run():
         router = get_ai_router()
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await router.complete(
                 task_type="chat_assistant",
                 prompt=prompt,

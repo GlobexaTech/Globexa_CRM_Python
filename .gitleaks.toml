@@ -1,0 +1,10 @@
+title = "Globexa source secret scan"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact synthetic key in the unchanged Checkpoint 1D config regression test"
+condition = "AND"
+paths = ['''(^|/)tests/test_config\.py$''']
+regexTarget = "secret"
+regexes = ['''^test-secret-key-min-32-chars-long$''']

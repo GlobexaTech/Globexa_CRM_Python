@@ -210,7 +210,7 @@ class MetaAdapter(IntegrationAdapter):
                 error_details={"status_code": e.response.status_code},
             )
         except Exception as e:
-            return SyncResult(success=False, error_message=str(e))
+            return SyncResult(success=False, error_message=type(e).__name__)
 
         return SyncResult(
             success=True,
@@ -355,7 +355,7 @@ class GoogleAdsAdapter(IntegrationAdapter):
                 }
 
                 # Query for lead form submissions
-                query = """
+                query_template = """
                     SELECT
                         lead_form_submission_data.lead_form_submission_fields,
                         lead_form_submission_data.submission_date_time,
@@ -367,9 +367,11 @@ class GoogleAdsAdapter(IntegrationAdapter):
                     FROM lead_form_submission_data
                     WHERE lead_form_submission_data.submission_date_time >= '{since}'
                     LIMIT {limit}
-                """.format(
+                """
+                # GAQL accepts no bound parameters; only typed date and bounded int enter the template.
+                query = query_template.format(
                     since=since.strftime("%Y-%m-%d") if since else "2020-01-01",
-                    limit=limit or 1000,
+                    limit=max(1, min(int(limit or 1000), 1000)),
                 )
 
                 response = await client.post(
@@ -385,10 +387,10 @@ class GoogleAdsAdapter(IntegrationAdapter):
                         lead_data = self._parse_google_ads_lead(row)
                         leads.append(lead_data)
                     except Exception as e:
-                        logger.error("Failed to parse Google Ads lead", error=str(e))
+                        logger.error("Failed to parse Google Ads lead", error=type(e).__name__)
 
         except Exception as e:
-            return SyncResult(success=False, error_message=str(e))
+            return SyncResult(success=False, error_message=type(e).__name__)
 
         return SyncResult(
             success=True,
@@ -522,10 +524,10 @@ class LinkedInAdapter(IntegrationAdapter):
                             lead_data = self._parse_linkedin_lead(lead, form_id)
                             leads.append(lead_data)
                         except Exception as e:
-                            logger.error("Failed to parse LinkedIn lead", error=str(e))
+                            logger.error("Failed to parse LinkedIn lead", error=type(e).__name__)
 
         except Exception as e:
-            return SyncResult(success=False, error_message=str(e))
+            return SyncResult(success=False, error_message=type(e).__name__)
 
         return SyncResult(
             success=True,
@@ -680,10 +682,10 @@ class ApolloAdapter(IntegrationAdapter):
                         lead_data = self._parse_apollo_person(person)
                         leads.append(lead_data)
                     except Exception as e:
-                        logger.error("Failed to parse Apollo person", error=str(e))
+                        logger.error("Failed to parse Apollo person", error=type(e).__name__)
 
         except Exception as e:
-            return SyncResult(success=False, error_message=str(e))
+            return SyncResult(success=False, error_message=type(e).__name__)
 
         return SyncResult(
             success=True,
@@ -810,10 +812,10 @@ class CSVAdapter(IntegrationAdapter):
                     lead_data = self._parse_csv_row(row, field_mapping)
                     leads.append(lead_data)
                 except Exception as e:
-                    logger.error("Failed to parse CSV row", row=i, error=str(e))
+                    logger.error("Failed to parse CSV row", row=i, error=type(e).__name__)
 
         except Exception as e:
-            return SyncResult(success=False, error_message=str(e))
+            return SyncResult(success=False, error_message=type(e).__name__)
 
         return SyncResult(
             success=True,

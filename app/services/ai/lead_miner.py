@@ -122,7 +122,7 @@ class LeadMinerService:
                 await self._create_lead_from_prospect(db, tenant_id, prospect, icp.id, user_id)
                 created_count += 1
             except Exception as e:
-                logger.error("Failed to create lead from prospect", error=str(e))
+                logger.error("Failed to create lead from prospect", error=type(e).__name__)
 
         # Update ICP stats
         icp.prospects_found = len(search_results)

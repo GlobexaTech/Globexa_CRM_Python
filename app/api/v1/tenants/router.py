@@ -49,6 +49,10 @@ async def create_tenant(
             raise HTTPException(status_code=400, detail="Domain already taken")
 
     tenant = Tenant(**data.model_dump())
+    from uuid import uuid4
+    from app.core.tenant_context import bind_context
+    tenant.id = uuid4()
+    await bind_context(db, tenant.id, current_user[0].id)
     db.add(tenant)
     await db.flush()
 
@@ -77,8 +81,8 @@ async def list_tenants(
     db: AsyncSession = Depends(get_db),
 ):
     """List all tenants (admin only)."""
-    query = select(Tenant).order_by(Tenant.created_at.desc())
-    total_query = select(func.count()).select_from(Tenant)
+    query = select(Tenant).where(Tenant.id == current_user[1].tenant_id).order_by(Tenant.created_at.desc())
+    total_query = select(func.count()).select_from(query.subquery())
 
     total = await db.scalar(total_query)
     result = await db.execute(
@@ -191,41 +195,6 @@ async def delete_tenant(
 
 
 # Subscription endpoints
-@router.post("/{tenant_id}/subscription", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
-async def create_subscription(
-    tenant_id: UUID,
-    data: SubscriptionCreate,
-    current_user: tuple = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create subscription for tenant."""
-    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
-    tenant = result.scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    # Check existing subscription
-    existing = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Subscription already exists")
-
-    subscription = Subscription(
-        tenant_id=tenant_id,
-        package=PackageEnum(data.package),
-        status=SubscriptionStatusEnum.TRIALING,
-        billing_email=data.billing_email,
-    )
-    db.add(subscription)
-
-    # Update entitlements for new package
-    from app.services.auth.service import AuthService
-    auth_service = AuthService(db)
-    await auth_service._create_default_entitlements(tenant_id, PackageEnum(data.package))
-
-    await db.commit()
-    await db.refresh(subscription)
-    return subscription
-
 
 @router.get("/{tenant_id}/subscription", response_model=SubscriptionResponse)
 async def get_subscription(
@@ -241,49 +210,7 @@ async def get_subscription(
     return subscription
 
 
-@router.patch("/{tenant_id}/subscription", response_model=SubscriptionResponse)
-async def update_subscription(
-    tenant_id: UUID,
-    data: SubscriptionUpdate,
-    current_user: tuple = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update tenant subscription (package change, etc.)."""
-    result = await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))
-    subscription = result.scalar_one_or_none()
-    if not subscription:
-        raise HTTPException(status_code=404, detail="Subscription not found")
 
-    update_data = data.model_dump(exclude_unset=True)
-
-    # Handle package change
-    if "package" in update_data:
-        old_package = subscription.package
-        new_package = PackageEnum(update_data["package"])
-        subscription.package = new_package
-
-        # Recreate entitlements for new package
-        from app.services.auth.service import AuthService
-        auth_service = AuthService(db)
-
-        # Delete old entitlements
-        await db.execute(
-            FeatureEntitlement.__table__.delete().where(FeatureEntitlement.tenant_id == tenant_id)
-        )
-
-        # Create new entitlements
-        await auth_service._create_default_entitlements(tenant_id, new_package)
-
-    for field, value in update_data.items():
-        if field != "package":
-            setattr(subscription, field, value)
-
-    await db.commit()
-    await db.refresh(subscription)
-    return subscription
-
-
-# Feature Entitlement endpoints
 @router.get("/{tenant_id}/entitlements", response_model=List[FeatureEntitlementResponse])
 async def list_entitlements(
     tenant_id: UUID,
@@ -297,66 +224,6 @@ async def list_entitlements(
     return result.scalars().all()
 
 
-@router.post("/{tenant_id}/entitlements", response_model=FeatureEntitlementResponse, status_code=status.HTTP_201_CREATED)
-async def create_entitlement(
-    tenant_id: UUID,
-    data: FeatureEntitlementCreate,
-    current_user: tuple = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create or update a feature entitlement."""
-    # Check if exists
-    result = await db.execute(
-        select(FeatureEntitlement).where(
-            FeatureEntitlement.tenant_id == tenant_id,
-            FeatureEntitlement.feature_key == data.feature_key,
-        )
-    )
-    existing = result.scalar_one_or_none()
-
-    if existing:
-        existing.enabled = data.enabled
-        existing.limit_value = data.limit_value
-        existing.metadata = data.metadata
-        entitlement = existing
-    else:
-        entitlement = FeatureEntitlement(
-            tenant_id=tenant_id,
-            **data.model_dump(),
-        )
-        db.add(entitlement)
-
-    await db.commit()
-    await db.refresh(entitlement)
-    return entitlement
-
-
-@router.patch("/{tenant_id}/entitlements/{feature_key}", response_model=FeatureEntitlementResponse)
-async def update_entitlement(
-    tenant_id: UUID,
-    feature_key: str,
-    data: FeatureEntitlementUpdate,
-    current_user: tuple = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update a feature entitlement."""
-    result = await db.execute(
-        select(FeatureEntitlement).where(
-            FeatureEntitlement.tenant_id == tenant_id,
-            FeatureEntitlement.feature_key == feature_key,
-        )
-    )
-    entitlement = result.scalar_one_or_none()
-    if not entitlement:
-        raise HTTPException(status_code=404, detail="Entitlement not found")
-
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(entitlement, field, value)
-
-    await db.commit()
-    await db.refresh(entitlement)
-    return entitlement
 
 
 @router.delete("/{tenant_id}/entitlements/{feature_key}", status_code=status.HTTP_204_NO_CONTENT)

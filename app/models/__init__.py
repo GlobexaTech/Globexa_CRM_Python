@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, declared_attr
 
 from app.core.database import Base, pg_enum
+from app.core.credentials import EncryptedText, EncryptedJSON
 
 
 class RoleEnum(str, enum.Enum):
@@ -35,6 +36,7 @@ class RoleEnum(str, enum.Enum):
     SALES_EXECUTIVE = "sales_executive"
     MARKETING = "marketing"
     VIEWER = "viewer"
+    AI_AGENT = "ai_agent"
 
 
 class PackageEnum(str, enum.Enum):
@@ -247,6 +249,7 @@ class AIProviderEnum(str, enum.Enum):
     """AI provider types."""
     OLLAMA = "ollama"
     NVIDIA = "nvidia"
+    DEEPSEEK = "deepseek"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
@@ -1343,7 +1346,7 @@ class SendingDomain(Base):
     reply_to_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Provider config
     provider: Mapped[EmailProviderTypeEnum] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=False)
-    provider_config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # Encrypted credentials
+    provider_config: Mapped[dict] = mapped_column(EncryptedJSON(), default=dict, nullable=False)  # Encrypted credentials
     # Verification
     dkim_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     spf_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -1384,7 +1387,7 @@ class EmailProviderConfig(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     provider: Mapped[EmailProviderTypeEnum] = mapped_column(pg_enum(EmailProviderTypeEnum, "email_provider_type_enum"), nullable=False)
     # Encrypted credentials (application-level encryption)
-    credentials_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # JSON encrypted
+    credentials_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)  # JSON encrypted
     # Config
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -1516,10 +1519,10 @@ class IntegrationCredential(Base):
     integration_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("integrations.id", ondelete="CASCADE"), nullable=False, index=True)
     # Credential details
     name: Mapped[str] = mapped_column(String(255), nullable=False)  # e.g., "access_token", "api_key", "client_secret"
-    credentials_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # Encrypted JSON
+    credentials_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)  # Encrypted JSON
     # OAuth fields
-    access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Encrypted
-    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Encrypted
+    access_token: Mapped[Optional[str]] = mapped_column(EncryptedText(), nullable=True)  # Encrypted
+    refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText(), nullable=True)  # Encrypted
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     token_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     scopes: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)
@@ -1552,7 +1555,7 @@ class WebhookEndpoint(Base):
     # Endpoint details
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url_path: Mapped[str] = mapped_column(String(500), nullable=False, index=True)  # e.g., "/webhooks/meta/leadgen"
-    secret: Mapped[str] = mapped_column(String(255), nullable=False)  # For signature verification
+    secret: Mapped[str] = mapped_column(EncryptedText(), nullable=False)  # For signature verification
     # Events
     events: Mapped[List[str]] = mapped_column(JSONB, default=list, nullable=False)  # e.g., ["lead.created", "lead.updated"]
     # Processing
@@ -1881,3 +1884,11 @@ class ICPProfile(Base):
     __table_args__ = (
         Index("ix_icp_profiles_tenant_active", "tenant_id", "is_active"),
     )
+# Register architectural foundations in the authoritative metadata registry.
+from app.models.foundation import (OAuthToken, DomainEvent, EventDelivery, WebhookReceipt,
+    Workflow, Trigger, Condition, Action, ExecutionLog, Plan, Feature, PlanFeature,
+    Conversation, Message, AgentDefinition)
+
+# Existing entities retain their storage and API identities.
+Webhook = WebhookEndpoint
+SyncJob = IntegrationSyncLog

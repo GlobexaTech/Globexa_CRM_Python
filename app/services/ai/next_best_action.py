@@ -1,3 +1,4 @@
+from sqlalchemy.orm import selectinload
 """
 AI Next-Best-Action Service for Globexa CRM.
 Provides explainable recommendations for lead actions.

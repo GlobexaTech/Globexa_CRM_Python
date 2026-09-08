@@ -1,3 +1,5 @@
+from sqlalchemy import update
+from datetime import timedelta
 """
 Integration API routes for Globexa CRM.
 """
@@ -136,7 +138,7 @@ async def get_integration(
         .options(
             selectinload(Integration.credentials),
             selectinload(Integration.webhooks),
-            selectinload(Integration.sync_logs).limit(10),
+            selectinload(Integration.sync_logs),
             selectinload(Integration.created_by),
         )
     )
@@ -213,7 +215,7 @@ async def update_integration(
     update_data.pop("created_at", None)
 
     for field, value in update_data.items():
-        if hasattr(integration, field):
+        if field in ['config', 'custom_fields', 'description', 'field_mappings', 'name', 'sync_enabled', 'sync_frequency_minutes']:
             setattr(integration, field, value)
 
     integration.updated_by_id = user.id
@@ -275,7 +277,7 @@ async def create_credential(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Credential with this name already exists")
 
-    # In production, encrypt credentials
+    # EncryptedText routes this through CredentialService at the database boundary.
     import json
     credentials_encrypted = json.dumps(data.get("credentials", {}))
 
@@ -359,7 +361,7 @@ async def update_credential(
         credential.credentials_encrypted = json.dumps(update_data.pop("credentials"))
 
     for field, value in update_data.items():
-        if hasattr(credential, field):
+        if field in ['access_token', 'is_active', 'name', 'refresh_token', 'scopes', 'token_expires_at', 'token_type']:
             setattr(credential, field, value)
 
     credential.updated_at = datetime.now(timezone.utc)
@@ -495,7 +497,7 @@ async def sync_integration(
 
     # Queue sync task
     from app.workers.tasks.integration_tasks_v2 import sync_integration_task
-    sync_integration_task.delay(str(integration_id), str(sync_log.id), full_sync)
+    sync_integration_task.delay(str(tenant_id), str(integration_id), str(sync_log.id), full_sync)
 
     return {"message": "Sync queued", "sync_log_id": str(sync_log.id)}
 
@@ -580,9 +582,10 @@ async def create_webhook(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Webhook URL path already exists")
 
-    # Generate secret
-    import secrets
-    secret = secrets.token_urlsafe(32)
+    # Caller provisions the provider secret; API responses never disclose it.
+    secret = data.get("secret")
+    if not isinstance(secret, str) or len(secret) < 32:
+        raise HTTPException(422, "A provider signing secret of at least 32 characters is required")
 
     webhook = WebhookEndpoint(
         tenant_id=tenant_id,
@@ -604,8 +607,8 @@ async def create_webhook(
     return {
         "id": str(webhook.id),
         "url_path": webhook.url_path,
-        "secret": secret,  # Only returned once!
-        "message": "Webhook created. Save the secret - it won't be shown again.",
+        "message": "Webhook created",
+        "ingress_path": f"/api/v1/hooks/{webhook.id}",
     }
 
 
@@ -702,59 +705,6 @@ async def delete_webhook(
 # =============================================================================
 # Webhook Ingress (Public - requires signature verification)
 # =============================================================================
-
-@router.post("/webhooks/{url_path:path}", response_model=dict)
-async def receive_webhook(
-    url_path: str,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
-    """Receive webhook from integration providers with signature verification."""
-    # Find webhook endpoint
-    full_path = f"/{url_path}"
-    result = await db.execute(
-        select(WebhookEndpoint).where(
-            WebhookEndpoint.url_path == full_path,
-            WebhookEndpoint.is_active == True,
-        )
-    )
-    webhook = result.scalar_one_or_none()
-    if not webhook:
-        raise HTTPException(status_code=404, detail="Webhook endpoint not found")
-
-    # Get payload
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-
-    # Get headers for signature verification
-    headers = dict(request.headers)
-
-    # DEMO MODE: Verify webhook signature for security
-    # In production, implement proper HMAC verification per provider
-    # For demo, we'll do basic validation
-    if not payload:
-        raise HTTPException(status_code=400, detail="Empty payload")
-
-    # TODO: Implement proper HMAC signature verification per provider
-    # Example:
-    # signature = headers.get("X-Signature") or headers.get("X-Hub-Signature-256")
-    # if not verify_webhook_signature(webhook.secret, payload, signature):
-    #     raise HTTPException(status_code=401, detail="Invalid signature")
-
-    # Queue webhook processing
-    from app.workers.tasks.integration_tasks_v2 import process_webhook_task
-    process_webhook_task.delay(
-        str(webhook.tenant_id),
-        str(webhook.id),
-        payload,
-        headers,
-    )
-
-    return {"status": "accepted"}
-
 
 # =============================================================================
 # Lead Source Configs
@@ -866,7 +816,7 @@ async def update_lead_source(
     update_data.pop("created_at", None)
 
     for field, value in update_data.items():
-        if hasattr(source, field):
+        if field in ['config', 'custom_fields', 'description', 'field_mappings', 'is_active', 'name']:
             setattr(source, field, value)
 
     source.updated_at = datetime.now(timezone.utc)

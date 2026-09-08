@@ -141,10 +141,10 @@ class ResendProvider(EmailProvider):
                 provider=self.provider_type.value,
             )
         except Exception as e:
-            logger.error("Resend send exception", error=str(e))
+            logger.error("Resend send exception", error=type(e).__name__)
             return EmailResult(
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
                 provider=self.provider_type.value,
             )
 
@@ -195,7 +195,7 @@ class ResendProvider(EmailProvider):
                 response.raise_for_status()
                 return True
         except Exception as e:
-            logger.error("Resend suppress failed", email=email, error=str(e))
+            logger.error("Resend suppress failed", email=email, error=type(e).__name__)
             return False
 
 
@@ -262,10 +262,10 @@ class GmailProvider(EmailProvider):
                 provider=self.provider_type.value,
             )
         except Exception as e:
-            logger.error("Gmail send exception", error=str(e))
+            logger.error("Gmail send exception", error=type(e).__name__)
             return EmailResult(
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
                 provider=self.provider_type.value,
             )
 
@@ -405,10 +405,10 @@ class MicrosoftProvider(EmailProvider):
                 provider=self.provider_type.value,
             )
         except Exception as e:
-            logger.error("Microsoft Graph send exception", error=str(e))
+            logger.error("Microsoft Graph send exception", error=type(e).__name__)
             return EmailResult(
                 success=False,
-                error_message=str(e),
+                error_message=type(e).__name__,
                 provider=self.provider_type.value,
             )
 
@@ -493,7 +493,7 @@ class SMTPProvider(EmailProvider):
                 raw_response={"status": "sent"},
             )
         except Exception as e:
-            logger.error("SMTP send failed", error=str(e))
+            logger.error("SMTP send failed", error=type(e).__name__)
             return EmailResult(
                 success=False,
                 error_message=f"SMTP error: {str(e)}",

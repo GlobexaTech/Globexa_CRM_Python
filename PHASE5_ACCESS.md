@@ -85,17 +85,17 @@ ANTHROPIC_API_KEY=your-anthropic-key
 ```bash
 # As admin, enable AI features for tenant
 curl -X POST http://localhost:8000/api/v1/tenants/{tenant_id}/entitlements \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"feature_key": "ai_scoring", "enabled": true, "limit_value": 10000}'
 
 curl -X POST http://localhost:8000/api/v1/tenants/{tenant_id}/entitlements \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"feature_key": "ai_miner", "enabled": true, "limit_value": 5000}'
 
 curl -X POST http://localhost:8000/api/v1/tenants/{tenant_id}/entitlements \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"feature_key": "campaigns", "enabled": true}'
 ```
@@ -117,7 +117,7 @@ celery -A app.workers.celery_app beat --loglevel=info
 ### 1. Score a Lead
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/score \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -125,7 +125,7 @@ curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/score \
 ### 2. Auto-Assign Lead
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/assign \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -133,7 +133,7 @@ curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/assign \
 ### 3. Get Next Best Action
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/next-action \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -141,7 +141,7 @@ curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/next-action \
 ### 4. Analyze Reply
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/analyze-reply \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"reply_text": "Your CRM looks interesting. Can you send pricing and explain WhatsApp integration?"}'
 ```
@@ -149,7 +149,7 @@ curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/analyze-reply \
 ### 5. Generate Response
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/generate-response \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"reply_text": "Interested in pricing", "response_type": "draft"}'
 ```
@@ -157,7 +157,7 @@ curl -X POST http://localhost:8000/api/v1/ai/leads/{lead_id}/generate-response \
 ### 6. Run Lead Miner
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/lead-miner/run \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "icp_definition": {
@@ -179,7 +179,7 @@ curl -X POST http://localhost:8000/api/v1/ai/lead-miner/run \
 ### 7. Generate Proposal
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/deals/{deal_id}/generate-proposal \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -187,7 +187,7 @@ curl -X POST http://localhost:8000/api/v1/ai/deals/{deal_id}/generate-proposal \
 ### 8. Chat with AI Assistant
 ```bash
 curl -X POST http://localhost:8000/api/v1/ai/chat \
-  -H "Authorization: Bearer SALES_EXEC_TOKEN" \
+  -H "Authorization: Bearer ${SALES_EXEC_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"message": "Find my best 20 leads today and create a campaign for them"}'
 ```
@@ -195,7 +195,7 @@ curl -X POST http://localhost:8000/api/v1/ai/chat \
 ### 9. Check AI Usage Analytics
 ```bash
 curl -X GET http://localhost:8000/api/v1/ai/usage/analytics?days=30 \
-  -H "Authorization: Bearer ADMIN_TOKEN"
+  -H "Authorization: Bearer ${ADMIN_TOKEN}"
 ```
 
 ## AI Assistant Available Tools (Permission-Gated)

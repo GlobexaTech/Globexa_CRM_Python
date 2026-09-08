@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import structlog
 
-from app.core.database import AsyncSessionLocal
+from app.core.tenant_context import tenant_db_context
 from app.models import Tenant, User
 
 logger = structlog.get_logger()
@@ -29,7 +29,7 @@ def send_bulk_email_task(self, tenant_id: str, campaign_id: str, recipient_ids: 
 
 
 @shared_task
-def retry_failed_emails():
+def retry_failed_emails(tenant_id: str):
     """Retry failed email sends."""
     logger.info("Retrying failed emails")
     # TODO: Query failed emails and retry

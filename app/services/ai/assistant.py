@@ -444,40 +444,26 @@ Current context:
         if isinstance(arguments, str):
             arguments = json.loads(arguments)
 
-        tool = self.tools.get(name)
-        if not tool:
-            return ToolResult(
-                call_id=call_id,
-                name=name,
-                result=None,
-                error=f"Unknown tool: {name}",
-            )
-
-        # Check permissions
-        if not all(p in user_permissions for p in tool.required_permissions):
-            return ToolResult(
-                call_id=call_id,
-                name=name,
-                result=None,
-                error=f"Permission denied. Required: {tool.required_permissions}",
-            )
-
+        from app.models import Membership
+        from app.core.security import create_access_token
+        from app.services.ai.tools import ToolPermissionLayer
+        import httpx
+        from app.main import app
+        membership = await db.scalar(select(Membership).where(
+            Membership.user_id == user_id, Membership.tenant_id == tenant_id))
+        aliases = {"search_leads": "lead.read", "get_lead": "lead.read", "search_contacts": "contact.read"}
+        approved = aliases.get(name)
+        if not membership or not approved:
+            return ToolResult(call_id=call_id, name=name, result=None, error="Tool is not approved")
+        token = create_access_token({"sub": str(user_id), "tenant_id": str(tenant_id),
+                                     "role": membership.role.value})
         try:
-            # Execute handler
-            result = await tool.handler(db, tenant_id, user_id, arguments, correlation_id)
-            return ToolResult(
-                call_id=call_id,
-                name=name,
-                result=result,
-            )
-        except Exception as e:
-            logger.error("Tool execution failed", tool=name, error=str(e))
-            return ToolResult(
-                call_id=call_id,
-                name=name,
-                result=None,
-                error=str(e),
-            )
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://crm") as client:
+                result = await ToolPermissionLayer(client).execute(
+                    approved, arguments, token=token, tenant_id=tenant_id, approved_tools={approved})
+            return ToolResult(call_id=call_id, name=name, result=result)
+        except (PermissionError, httpx.HTTPError, ValueError):
+            return ToolResult(call_id=call_id, name=name, result=None, error="Tool request rejected")
 
     # =========================================================================
     # Tool Handlers

@@ -171,13 +171,13 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 ```bash
 # Replace YOUR_TOKEN with the access_token from login
 curl -X GET http://localhost:8000/api/v1/auth/me \
-  -H "Authorization: Bearer YOUR_TOKEN"
+  -H "Authorization: Bearer ${YOUR_TOKEN}"
 ```
 
 ### 4. Create a Contact
 ```bash
 curl -X POST http://localhost:8000/api/v1/contacts \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Authorization: Bearer ${YOUR_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "first_name": "John",
@@ -191,7 +191,7 @@ curl -X POST http://localhost:8000/api/v1/contacts \
 ### 5. Create a Lead
 ```bash
 curl -X POST http://localhost:8000/api/v1/leads \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Authorization: Bearer ${YOUR_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "New CRM Inquiry",
@@ -217,11 +217,11 @@ curl -X POST http://localhost:8000/api/v1/leads \
 ```bash
 # Check tenant features
 curl -X GET http://localhost:8000/api/v1/tenants/me \
-  -H "Authorization: Bearer YOUR_TOKEN"
+  -H "Authorization: Bearer ${YOUR_TOKEN}"
 
 # Admin can enable features
 curl -X POST http://localhost:8000/api/v1/tenants/{tenant_id}/entitlements \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"feature_key": "ai_scoring", "enabled": true, "limit_value": 10000}'
 ```

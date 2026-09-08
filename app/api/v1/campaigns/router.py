@@ -264,7 +264,7 @@ async def update_campaign(
     update_data.pop("created_at", None)
 
     for field, value in update_data.items():
-        if hasattr(campaign, field):
+        if field in ['custom_fields', 'description', 'from_email', 'from_name', 'name', 'reply_to', 'subject']:
             setattr(campaign, field, value)
 
     campaign.updated_by_id = user.id
@@ -352,7 +352,7 @@ async def send_campaign(
 
     # Queue campaign for sending
     from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
-    send_campaign_task.delay(str(campaign_id), str(user.id))
+    send_campaign_task.delay(str(tenant_id), str(campaign_id), str(user.id))
 
     campaign.status = CampaignStatusEnum.SENDING
     campaign.sent_at = datetime.now(timezone.utc)
@@ -434,7 +434,7 @@ async def resume_campaign(
         raise HTTPException(status_code=400, detail="Can only resume paused campaigns")
 
     from app.workers.tasks.campaign_tasks_v2 import send_campaign_task
-    send_campaign_task.delay(str(campaign_id), str(current_user[0].id))
+    send_campaign_task.delay(str(tenant_id), str(campaign_id), str(current_user[0].id))
 
     campaign.status = CampaignStatusEnum.SENDING
     await db.commit()

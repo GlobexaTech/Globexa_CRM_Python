@@ -277,8 +277,8 @@ class LeadScoringService:
                     evidence=f"Company size: {size} employees",
                     category="firmographic",
                 ))
-            except:
-                pass
+            except (ValueError, TypeError):
+                logger.debug("Company size is not numeric")
 
             # Industry fit
             target_industries = self.FIRMOGRAPHIC_FACTORS["industry_fit"]["target_industries"]

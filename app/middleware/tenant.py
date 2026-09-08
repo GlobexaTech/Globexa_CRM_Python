@@ -47,41 +47,34 @@ class TenantMiddleware(BaseHTTPMiddleware):
         self.default_tenant_slug = default_tenant_slug
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in self.EXCLUDED_PATHS:
+        from app.core.tenant_context import tenant_context, current_user
+        if request.url.path in self.EXCLUDED_PATHS or request.url.path.startswith("/api/v1/hooks/"):
             return await call_next(request)
-
-        if request.url.path.startswith("/ws"):
-            return await call_next(request)
-
-        tenant = await self._resolve_tenant(request)
-        if not tenant:
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={
-                    "detail": (
-                        "Tenant not found. Provide X-Tenant-ID header "
-                        "or use a valid tenant host."
-                    )
-                },
-            )
-
-        if not tenant.is_active:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={"detail": "Tenant is inactive"},
-            )
-
-        request.state.tenant = tenant
-        request.state.tenant_id = tenant.id
-
-        context_error = await self._validate_tenant_context(request, tenant)
-        if context_error:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={"detail": context_error},
-            )
-
-        return await call_next(request)
+        authorization = request.headers.get("Authorization", "")
+        payload = decode_token(authorization.removeprefix("Bearer ")) if authorization.startswith("Bearer ") else None
+        if not payload or payload.get("type") != "access":
+            return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        try:
+            actor = UUID(str(payload["sub"]))
+            token_tenant = UUID(str(payload["tenant_id"]))
+        except (ValueError, KeyError, TypeError):
+            return JSONResponse(status_code=401, content={"detail": "Invalid authentication context"})
+        identity_token = current_user.set(actor)
+        try:
+            tenant = await self._resolve_tenant(request)
+            if not tenant:
+                return JSONResponse(status_code=400, content={"detail": "Tenant not found"})
+            if not tenant.is_active or tenant.id != token_tenant:
+                return JSONResponse(status_code=403, content={"detail": "Tenant context mismatch"})
+            error = await self._validate_tenant_context(request, tenant)
+            if error:
+                return JSONResponse(status_code=403, content={"detail": error})
+            request.state.tenant = tenant
+            request.state.tenant_id = tenant.id
+            with tenant_context(tenant.id, actor):
+                return await call_next(request)
+        finally:
+            current_user.reset(identity_token)
 
     async def _validate_tenant_context(
         self,

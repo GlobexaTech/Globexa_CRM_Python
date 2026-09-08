@@ -10,7 +10,7 @@ from uuid import UUID
 import structlog
 import asyncio
 
-from app.core.database import AsyncSessionLocal
+from app.core.tenant_context import tenant_db_context
 from app.models import (
     Campaign, CampaignRecipient, CampaignSequence, CampaignTemplate,
     CampaignStats, Contact, SendingDomain, Activity, ActivityTypeEnum,
@@ -22,12 +22,12 @@ logger = structlog.get_logger()
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_campaign_task(self, campaign_id: str, user_id: str):
+def send_campaign_task(self, tenant_id: str, campaign_id: str, user_id: str):
     """Main task to send a campaign (broadcast or sequence)."""
     logger.info("Sending campaign", campaign_id=campaign_id)
     
     async def _send():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             # Load campaign with all relations
             result = await db.execute(
                 select(Campaign)
@@ -406,7 +406,7 @@ async def _get_provider_config(db: AsyncSession, campaign: Campaign):
         domain = result.scalar_one_or_none()
         if domain and domain.provider_config:
             provider_type = EmailProviderType(domain.provider)
-            # Decrypt credentials (simplified)
+            # CredentialService decrypts provider_config at the model boundary.
             config = ProviderConfig(
                 provider_type=provider_type,
                 credentials=domain.provider_config,
@@ -427,8 +427,7 @@ async def _get_provider_config(db: AsyncSession, campaign: Campaign):
         provider_type = EmailProviderType(config_obj.provider)
         # Decrypt credentials
         import json
-        from cryptography.fernet import Fernet
-        # Simplified - in production use proper encryption
+        # Model-level CredentialService decryption has already authenticated the envelope.
         credentials = json.loads(config_obj.credentials_encrypted)
         config = ProviderConfig(
             provider_type=provider_type,
@@ -536,7 +535,7 @@ def process_email_webhook(tenant_id: str, provider: str, payload: dict):
     logger.info("Processing email webhook", tenant_id=tenant_id, provider=provider)
     
     async def _process():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             provider_type = EmailProviderType(provider)
             email_service = EmailService()
             
@@ -569,7 +568,7 @@ def process_email_webhook(tenant_id: str, provider: str, payload: dict):
 
             await db.commit()
 
-    asyncio.run(_process())
+    asyncio.run(_process(tenant_id))
 
 
 async def _process_email_event(db: AsyncSession, tenant_id: UUID, event: dict):
@@ -722,7 +721,7 @@ def _event_type_to_activity(event_type: str) -> ActivityTypeEnum:
 # =============================================================================
 
 @shared_task
-def process_scheduled_campaigns():
+def process_scheduled_campaigns(tenant_id: str):
     """Check and send scheduled campaigns."""
     logger.info("Processing scheduled campaigns")
     
@@ -737,14 +736,14 @@ def process_scheduled_campaigns():
         # Schedule the coroutine to run in the existing loop
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, _process())
+            future = executor.submit(asyncio.run, _process(tenant_id))
             return future.result()
     else:
-        asyncio.run(_process())
+        asyncio.run(_process(tenant_id))
 
 
-async def _process():
-    async with AsyncSessionLocal() as db:
+async def _process(tenant_id):
+    async with tenant_db_context(tenant_id) as db:
         now = datetime.now(timezone.utc)
         result = await db.execute(
             select(Campaign).where(
@@ -755,11 +754,11 @@ async def _process():
         campaigns = result.scalars().all()
 
         for campaign in campaigns:
-            send_campaign_task.delay(str(campaign.id), str(campaign.created_by_id))
+            send_campaign_task.delay(tenant_id, str(campaign.id), str(campaign.created_by_id))
 
 
 @shared_task
-def retry_failed_emails():
+def retry_failed_emails(tenant_id: str):
     """Retry failed email sends."""
     logger.info("Retrying failed emails")
     
@@ -772,14 +771,14 @@ def retry_failed_emails():
     if loop and loop.is_running():
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, _retry())
+            future = executor.submit(asyncio.run, _retry(tenant_id))
             return future.result()
     else:
-        asyncio.run(_retry())
+        asyncio.run(_retry(tenant_id))
 
 
-async def _retry():
-    async with AsyncSessionLocal() as db:
+async def _retry(tenant_id):
+    async with tenant_db_context(tenant_id) as db:
         result = await db.execute(
             select(CampaignRecipient).where(
                 CampaignRecipient.status == CampaignRecipientStatusEnum.FAILED,
@@ -792,18 +791,18 @@ async def _retry():
             recipient.error_message = None
             
             # Re-queue
-            send_campaign_task.delay(str(recipient.campaign_id), str(recipient.campaign.created_by_id))
+            send_campaign_task.delay(tenant_id, str(recipient.campaign_id), str(recipient.campaign.created_by_id))
 
         await db.commit()
 
 
 @shared_task
-def aggregate_campaign_stats():
+def aggregate_campaign_stats(tenant_id: str):
     """Aggregate campaign statistics."""
     logger.info("Aggregating campaign stats")
     
     async def _aggregate():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await db.execute(select(Campaign).where(Campaign.status.in_([
                 CampaignStatusEnum.SENDING,
                 CampaignStatusEnum.SENT,

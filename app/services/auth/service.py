@@ -4,9 +4,9 @@ Handles user registration, login, JWT tokens, Google OAuth, and password reset.
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from authlib.integrations.starlette_client import OAuth
@@ -14,6 +14,7 @@ from authlib.oauth2.rfc7523 import PrivateKeyJWT
 import httpx
 
 from app.core.config import get_settings
+from app.core.tenant_context import bind_context
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -59,13 +60,16 @@ class AuthService:
     ) -> Tuple[User, Tenant]:
         """Register a new user and create their first tenant."""
         # Check if user exists
-        existing = await self.db.execute(select(User).where(User.email == email))
+        existing = await self.db.execute(select(User).from_statement(text("SELECT * FROM public.auth_lookup_user(:email)")).params(email=email))
         if existing.scalar_one_or_none():
             raise ValueError("Email already registered")
 
         # Create user
+        new_user_id = uuid4()
+        await bind_context(self.db, user_id=new_user_id)
         hashed_password = hash_password(password)
         user = User(
+            id=new_user_id,
             email=email,
             hashed_password=hashed_password,
             full_name=full_name,
@@ -80,10 +84,8 @@ class AuthService:
             base_slug = tenant_slug
             counter = 1
             while True:
-                existing_tenant = await self.db.execute(
-                    select(Tenant).where(Tenant.slug == tenant_slug)
-                )
-                if not existing_tenant.scalar_one_or_none():
+                exists = await self.db.scalar(text("SELECT public.tenant_slug_exists(:slug)"), {"slug": tenant_slug})
+                if not exists:
                     break
                 tenant_slug = f"{base_slug}-{counter}"
                 counter += 1
@@ -92,8 +94,12 @@ class AuthService:
             name=tenant_name or f"{full_name}'s Workspace",
             slug=tenant_slug,
         )
+        tenant.id = uuid4()
+        await bind_context(self.db, tenant.id, user.id)
         self.db.add(tenant)
         await self.db.flush()
+
+        await bind_context(self.db, tenant.id, user.id)
 
         # Create owner membership
         membership = Membership(
@@ -135,11 +141,8 @@ class AuthService:
 
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
         """Authenticate user with email and password."""
-        result = await self.db.execute(
-            select(User)
-            .where(User.email == email)
-            .options(selectinload(User.memberships).selectinload(Membership.tenant))
-        )
+        result = await self.db.execute(select(User).from_statement(
+            text("SELECT * FROM public.auth_lookup_user(:email)")).params(email=email))
         user = result.scalar_one_or_none()
 
         if not user or not user.hashed_password:
@@ -150,6 +153,9 @@ class AuthService:
 
         if not user.is_active:
             return None
+
+        await bind_context(self.db, user_id=user.id)
+        await self.db.refresh(user, ["memberships"])
 
         # Update last login
         user.last_login_at = datetime.now(timezone.utc)
@@ -186,14 +192,12 @@ class AuthService:
         if not email or not google_id:
             raise ValueError("Invalid Google response")
 
-        # Find existing user by Google ID
-        result = await self.db.execute(
-            select(User)
-            .where(User.google_id == google_id)
-            .options(selectinload(User.memberships).selectinload(Membership.tenant))
-        )
+        result = await self.db.execute(select(User).from_statement(
+            text("SELECT * FROM public.auth_lookup_user(:email)")).params(email=email))
         user = result.scalar_one_or_none()
-
+        if user:
+            await bind_context(self.db, user_id=user.id)
+            await self.db.refresh(user, ["memberships"])
         if user:
             # Update avatar if changed
             if avatar_url and user.avatar_url != avatar_url:
@@ -226,7 +230,10 @@ class AuthService:
             return user, tenant
 
         # Create new user via Google
+        new_user_id = uuid4()
+        await bind_context(self.db, user_id=new_user_id)
         user = User(
+            id=new_user_id,
             email=email,
             full_name=full_name,
             avatar_url=avatar_url,
@@ -251,8 +258,12 @@ class AuthService:
             counter += 1
 
         tenant = Tenant(name=f"{full_name}'s Workspace", slug=tenant_slug)
+        tenant.id = uuid4()
+        await bind_context(self.db, tenant.id, user.id)
         self.db.add(tenant)
         await self.db.flush()
+
+        await bind_context(self.db, tenant.id, user.id)
 
         # Owner membership
         membership = Membership(
@@ -292,6 +303,7 @@ class AuthService:
 
     async def create_tokens(self, user: User, tenant_id: UUID) -> dict:
         """Create access and refresh tokens for user in a tenant."""
+        await bind_context(self.db, user_id=user.id)
         # Verify membership
         result = await self.db.execute(
             select(Membership).where(
@@ -302,6 +314,8 @@ class AuthService:
         membership = result.scalar_one_or_none()
         if not membership:
             raise ValueError("User not a member of this tenant")
+
+        await bind_context(self.db, tenant_id, user.id)
 
         token_data = {
             "sub": str(user.id),
@@ -316,7 +330,7 @@ class AuthService:
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": "bearer",
+            "token_type": "bearer",  # nosec B105
             "expires_in": settings.security.access_token_expire_minutes * 60,
         }
 
@@ -328,6 +342,11 @@ class AuthService:
 
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
+
+        try:
+            await bind_context(self.db, user_id=UUID(str(user_id)))
+        except (ValueError, TypeError):
+            return None
 
         # Verify user still exists and is active
         result = await self.db.execute(
@@ -359,6 +378,11 @@ class AuthService:
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
 
+        try:
+            await bind_context(self.db, tenant_id, user_id)
+        except (ValueError, TypeError):
+            return None
+
         result = await self.db.execute(
             select(User)
             .where(User.id == user_id, User.is_active == True)
@@ -377,33 +401,9 @@ class AuthService:
 
         return user, membership
 
-    async def _create_default_entitlements(self, tenant_id: UUID, package: "PackageEnum") -> None:
-        """Create default feature entitlements for a package."""
-        from app.models import FeatureEntitlement
-        from app.core.config import settings
-
-        package_config = getattr(settings.packages, package.value.upper(), None)
-        if not package_config:
-            return
-
-        # Features
-        for feature_key, enabled in package_config.features.items():
-            entitlement = FeatureEntitlement(
-                tenant_id=tenant_id,
-                feature_key=feature_key,
-                enabled=enabled,
-            )
-            self.db.add(entitlement)
-
-        # Limits
-        for limit_key, limit_value in package_config.limits.items():
-            entitlement = FeatureEntitlement(
-                tenant_id=tenant_id,
-                feature_key=f"limit_{limit_key}",
-                enabled=True,
-                limit_value=limit_value,
-            )
-            self.db.add(entitlement)
+    async def _create_default_entitlements(self, tenant_id, package):
+        from app.core.entitlements import EntitlementService
+        await EntitlementService(self.db).provision(tenant_id, package.value)
 
     async def _audit_log(
         self,
