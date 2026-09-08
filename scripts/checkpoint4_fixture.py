@@ -13,11 +13,39 @@ from pathlib import Path
 import secrets
 import sys
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+def mask_actions_secret(value):
+    """Register before use/output; local bootstrap never prints credentials."""
+    if os.environ.get("GITHUB_ACTIONS") == "true" and isinstance(value, str) and value:
+        escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print("::add-mask::" + escaped, flush=True)
+
+
+def mask_actions_credentials(values):
+    for name, value in values.items():
+        if name.upper().endswith(("_KEY", "_SECRET", "_PASSWORD", "_TOKEN")):
+            mask_actions_secret(value)
+        if name.upper().endswith("_URL") and isinstance(value, str):
+            try:
+                password = urlsplit(value).password
+            except ValueError:
+                continue
+            if password:
+                mask_actions_secret(password)
+                mask_actions_secret(unquote(password))
+
+
+def fixture_secret(size):
+    value = secrets.token_urlsafe(size)
+    mask_actions_secret(value)
+    return value
 
 
 def require_test_database():
@@ -52,7 +80,7 @@ async def seed():
         db.add_all([tenant_a, tenant_b])
         users = {}
         for role in RoleEnum:
-            password = secrets.token_urlsafe(24)
+            password = fixture_secret(24)
             user = User(email=f"{role.value}.{run}@example.com", full_name=f"E2E {role.value.replace('_', ' ').title()}", hashed_password=hash_password(password), is_active=True, email_verified=True)
             db.add(user)
             users[role.value] = user
@@ -87,7 +115,7 @@ async def seed():
             activity = Activity(tenant_id=tenant.id, subject=f"{label} discovery call", type="call", lead_id=lead.id, contact_id=contact.id, user_id=owner.id)
             conversation = Conversation(tenant_id=tenant.id, subject=f"{label} customer conversation", contact_id=contact.id, company_id=company.id, lead_id=lead.id, integration_id=integration.id, channel="email", last_message_at=datetime.now(timezone.utc), unread_count=1)
             campaign = Campaign(tenant_id=tenant.id, name=f"{label} draft campaign", type="broadcast", sender_name="Globexa E2E", sender_email="sender@example.com", created_by_id=owner.id)
-            token = OAuthToken(tenant_id=tenant.id, integration_id=integration.id, access_token=secrets.token_urlsafe(30), refresh_token=secrets.token_urlsafe(30), expires_at=datetime.now(timezone.utc) + timedelta(hours=3))
+            token = OAuthToken(tenant_id=tenant.id, integration_id=integration.id, access_token=fixture_secret(30), refresh_token=fixture_secret(30), expires_at=datetime.now(timezone.utc) + timedelta(hours=3))
             db.add_all([deal, task, note, activity, conversation, campaign, token])
             await db.flush()
             message = Message(tenant_id=tenant.id, conversation_id=conversation.id, body=f"{label} asks for a discovery meeting.", direction="inbound", status="received", sender=contact.email, recipient="sender@example.com", provider_message_id="seed-" + run + label, idempotency_key="seed-" + run + label)
@@ -123,8 +151,10 @@ def main():
     os.environ.setdefault("RUNTIME_DATABASE_PASSWORD", secrets.token_urlsafe(32))
     os.environ.setdefault("RUNTIME_DATABASE_ROLE", "globexa_cp4_runtime")
     os.environ.setdefault("SESSION_ENCRYPTION_KEY", secrets.token_hex(32))
+    mask_actions_credentials(os.environ)
     from app.core.config import get_settings
     settings = get_settings()
+    mask_actions_secret(settings.database.password)
     if args.bootstrap:
         import psycopg2
         from psycopg2 import sql
@@ -158,8 +188,9 @@ def main():
         "FRONTEND_REDIS_URL": os.environ.get("FRONTEND_REDIS_URL", "redis://127.0.0.1:6379/13"),
         "APP_ORIGIN": fixture["origin"], "BACKEND_API_URL": fixture["backend"], "FRONTEND_ENV": "testing",
         "CRM_PUBLIC_BASE_URL": "https://crm.example.test", "CRM_GMAIL_CLIENT_ID": "cp4-test-adapter",
-        "CRM_GMAIL_CLIENT_SECRET": secrets.token_urlsafe(24), "CRM_GMAIL_REDIRECT_URI": fixture["origin"] + "/integrations/callback",
+        "CRM_GMAIL_CLIENT_SECRET": fixture_secret(24), "CRM_GMAIL_REDIRECT_URI": fixture["origin"] + "/integrations/callback",
     }
+    mask_actions_credentials(runtime)
     (directory / "runtime.env.json").write_text(json.dumps(runtime, indent=2), encoding="utf-8")
     for name in ("fixture.json", "runtime.env.json"):
         (directory / name).chmod(0o600)

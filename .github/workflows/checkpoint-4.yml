@@ -64,11 +64,19 @@ jobs:
           python - <<'PY'
           import os, secrets
           from cryptography.fernet import Fernet
-          with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write('SECURITY_SECRET_KEY=' + secrets.token_hex(32) + '\n')
-              output.write('SECURITY_CREDENTIAL_ENCRYPTION_KEY=' + Fernet.generate_key().decode() + '\n')
-              output.write('RUNTIME_DATABASE_PASSWORD=' + secrets.token_hex(24) + '\n')
-              output.write('SESSION_ENCRYPTION_KEY=' + secrets.token_hex(32) + '\n')
+          generated = {
+              'SECURITY_SECRET_KEY': secrets.token_hex(32),
+              'SECURITY_CREDENTIAL_ENCRYPTION_KEY': Fernet.generate_key().decode(),
+              'RUNTIME_DATABASE_PASSWORD': secrets.token_hex(24),
+              'SESSION_ENCRYPTION_KEY': secrets.token_hex(32),
+          }
+          # Register every mask before later steps can display GITHUB_ENV values.
+          for value in generated.values():
+              escaped = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::add-mask::' + escaped, flush=True)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+              for name, value in generated.items():
+                  output.write(name + '=' + value + '\n')
           PY
       - name: PostgreSQL 16 empty migrations, restricted role and Redis 7
         run: |
