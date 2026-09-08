@@ -55,6 +55,9 @@ async def tenant_db_context(tenant_id, user_id=None):
         try:
             async with async_sessionmaker(engine, expire_on_commit=False)() as db:
                 try:
+                    if get_settings().app.environment == "production":
+                        from app.core.runtime_security import verify_runtime_security
+                        await verify_runtime_security(db)
                     yield db
                     from app.models import AuditLog
                     db.add(AuditLog(tenant_id=UUID(str(tenant_id)), user_id=UUID(str(user_id)) if user_id else None,

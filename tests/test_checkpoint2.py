@@ -275,3 +275,53 @@ def test_context_reset_on_error():
             assert current_tenant.get() is not None
             raise RuntimeError("test")
     assert current_tenant.get() is None
+
+
+async def test_disabled_identity_cannot_reach_tenant_only_route(client, auth_headers, test_user, db_session):
+    from app.models import User
+    await db_session.execute(update(User).where(User.id == test_user.id).values(is_active=False))
+    response = await client.get("/api/v1/tenants/me", headers=auth_headers)
+    assert response.status_code == 403
+
+
+async def test_tenant_admin_cannot_create_global_superuser(client, auth_headers):
+    response = await client.post("/api/v1/users", headers=auth_headers, json={
+        "email": "super@example.com", "password": "strong-password", "full_name": "Attempt", "is_superuser": True})
+    assert response.status_code == 422
+
+
+def test_peer_roles_do_not_inherit_ai_permissions():
+    from app.core.rbac import get_role_permissions
+    from app.models import RoleEnum
+    assert "ai:chat" not in get_role_permissions(RoleEnum.VIEWER)
+    assert "leads:write" not in get_role_permissions(RoleEnum.AI_AGENT)
+
+
+async def test_runtime_registration_uses_narrow_bootstrap(client, db_session):
+    await restrict(db_session)
+    response = await client.post("/api/v1/auth/register", json={
+        "email": "runtime-register@example.com", "password": "strong-password", "full_name": "Runtime"})
+    assert response.status_code == 201, response.text
+
+
+def test_nested_camelcase_secrets_are_detected():
+    from app.core.input_security import contains_secrets, redact
+    data = {"nested": [{"apiKey": "hidden", "client-secret": "hidden"}]}
+    assert contains_secrets(data)
+    assert "hidden" not in json.dumps(redact(data))
+
+
+async def test_production_runtime_rejects_privileged_role(db_session):
+    from app.core.runtime_security import verify_runtime_security
+    with pytest.raises(RuntimeError, match="SUPERUSER"):
+        await verify_runtime_security(db_session)
+    await restrict(db_session)
+    await verify_runtime_security(db_session)
+
+
+async def test_production_runtime_rejects_unprotected_table(db_session):
+    from app.core.runtime_security import verify_runtime_security
+    await db_session.execute(text("ALTER TABLE leads NO FORCE ROW LEVEL SECURITY"))
+    await restrict(db_session)
+    with pytest.raises(RuntimeError, match="migrations are incomplete"):
+        await verify_runtime_security(db_session)

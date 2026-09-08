@@ -8,9 +8,14 @@ SECRET_KEYS = {"password", "secret", "api_key", "access_token", "refresh_token",
                "authorization", "webhook_secret", "credentials", "provider_credentials"}
 
 
+def is_secret_key(key):
+    normalized = str(key).lower().replace("_", "").replace("-", "")
+    return normalized in {item.replace("_", "") for item in SECRET_KEYS}
+
+
 def contains_secrets(value):
     if isinstance(value, dict):
-        return any(key.lower() in SECRET_KEYS or contains_secrets(item) for key, item in value.items())
+        return any(is_secret_key(key) or contains_secrets(item) for key, item in value.items())
     if isinstance(value, list):
         return any(contains_secrets(item) for item in value)
     return False
@@ -18,7 +23,7 @@ def contains_secrets(value):
 
 def redact(value):
     if isinstance(value, dict):
-        return {key: "[redacted]" if key.lower() in SECRET_KEYS else redact(item)
+        return {key: "[redacted]" if is_secret_key(key) else redact(item)
                 for key, item in value.items()}
     if isinstance(value, list):
         return [redact(item) for item in value]

@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 
 from app.core.database import AsyncSessionLocal
 from app.core.security import decode_token
-from app.models import Membership, Tenant
+from app.models import Membership, Tenant, User
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -170,7 +170,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def _has_membership(self, user_id: UUID, tenant_id: UUID) -> bool:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                select(Membership.id).where(
+                select(Membership.id).join(User, User.id == Membership.user_id).where(
+                    User.is_active.is_(True),
                     Membership.user_id == user_id,
                     Membership.tenant_id == tenant_id,
                 )

@@ -112,9 +112,8 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.execute(text("SELECT 1"))
         if settings.app.environment == "production":
-            unsafe = await conn.scalar(text("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user"))
-            if unsafe:
-                raise RuntimeError("Runtime database role must not be SUPERUSER or BYPASSRLS")
+            from app.core.runtime_security import verify_runtime_security
+            await verify_runtime_security(conn)
 
 
 async def close_db() -> None:
