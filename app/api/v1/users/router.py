@@ -25,6 +25,17 @@ from app.schemas import (
 from app.models import User, Membership, RoleEnum, Tenant
 from app.core.security import hash_password, generate_secure_token
 from app.services.auth.service import AuthService
+from app.core.rbac import may_assign_role
+
+def check_assignment(current_user, role):
+    try:
+        target = RoleEnum(role)
+    except ValueError:
+        raise HTTPException(422, "Unknown role") from None
+    if not may_assign_role(current_user[1].role, target):
+        raise HTTPException(403, "Role assignment forbidden")
+    return target
+
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -37,6 +48,7 @@ async def create_user(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Create a new user in the current tenant."""
+    check_assignment(current_user, data.role)
     # Check if email already exists globally
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
@@ -45,14 +57,14 @@ async def create_user(
     # Create user
     user = User(
         email=data.email,
-        hashed_password=hash_password(data.hashed_password) if data.hashed_password else hash_password(generate_secure_token(16)),
+        hashed_password=hash_password(data.password),
         full_name=data.full_name,
         avatar_url=data.avatar_url,
         phone=data.phone,
         timezone=data.timezone,
         locale=data.locale,
-        is_active=data.is_active,
-        is_superuser=data.is_superuser,
+        is_active=True,
+        is_superuser=False,
         email_verified=False,
     )
     db.add(user)
@@ -168,8 +180,7 @@ async def update_user(
     current_user_obj, current_membership = current_user
     if user.id == current_user_obj.id:
         # Don't allow deactivating yourself
-        if data.is_active is False:
-            raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+        pass
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -203,6 +214,7 @@ async def delete_user(
     if not membership:
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
+    check_assignment(current_user, membership.role)
     # Don't allow removing the last owner
     if membership.role == RoleEnum.OWNER:
         owner_count = await db.scalar(
@@ -228,6 +240,7 @@ async def add_user_to_tenant(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Add an existing user to the current tenant."""
+    check_assignment(current_user, data.role)
     # Verify user exists
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -277,6 +290,10 @@ async def update_membership(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
 
+    if data.role:
+        check_assignment(current_user, data.role)
+        if user_id == current_user_obj.id:
+            raise HTTPException(403, "Cannot change your own role")
     # Prevent self-demotion
     if user_id == current_user_obj.id:
         if data.role and RoleEnum(data.role) != RoleEnum.OWNER:
@@ -284,6 +301,7 @@ async def update_membership(
         if data.is_default is False:
             raise HTTPException(status_code=400, detail="Cannot unset default tenant for yourself")
 
+    check_assignment(current_user, membership.role)
     # Prevent removing last owner
     if membership.role == RoleEnum.OWNER and data.role and RoleEnum(data.role) != RoleEnum.OWNER:
         owner_count = await db.scalar(
@@ -329,6 +347,7 @@ async def remove_user_from_tenant(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
 
+    check_assignment(current_user, membership.role)
     # Prevent removing last owner
     if membership.role == RoleEnum.OWNER:
         owner_count = await db.scalar(

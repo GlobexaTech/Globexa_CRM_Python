@@ -10,7 +10,7 @@ from uuid import UUID
 import structlog
 import asyncio
 
-from app.core.database import AsyncSessionLocal
+from app.core.tenant_context import tenant_db_context
 from app.models import (
     Integration, IntegrationCredential, WebhookEndpoint, IntegrationSyncLog,
     LeadSourceConfig, Touchpoint, Contact, Company, Lead,
@@ -23,12 +23,12 @@ logger = structlog.get_logger()
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=60)
-def sync_integration_task(self, integration_id: str, sync_log_id: str, full_sync: bool = False):
+def sync_integration_task(self, tenant_id: str, integration_id: str, sync_log_id: str, full_sync: bool = False):
     """Sync leads from an integration."""
     logger.info("Syncing integration", integration_id=integration_id, sync_log_id=sync_log_id)
     
     async def _sync():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             # Load integration with credentials
             result = await db.execute(
                 select(Integration)
@@ -96,7 +96,7 @@ def sync_integration_task(self, integration_id: str, sync_log_id: str, full_sync
                             await _process_lead(db, integration, lead_data)
                             leads_created += 1
                         except Exception as e:
-                            logger.error("Failed to process lead", error=str(e))
+                            logger.error("Failed to process lead", error=type(e).__name__)
                             leads_failed += 1
 
                 # Update integration
@@ -125,15 +125,15 @@ def sync_integration_task(self, integration_id: str, sync_log_id: str, full_sync
                            failed=leads_failed)
 
             except Exception as e:
-                logger.error("Sync failed", integration_id=integration_id, error=str(e))
+                logger.error("Sync failed", integration_id=integration_id, error=type(e).__name__)
                 
                 sync_log.status = SyncStatusEnum.FAILED
                 sync_log.completed_at = datetime.now(timezone.utc)
                 sync_log.duration_seconds = (datetime.now(timezone.utc) - sync_log.started_at).total_seconds()
-                sync_log.error_message = str(e)
+                sync_log.error_message = type(e).__name__
                 
                 integration.last_sync_status = SyncStatusEnum.FAILED
-                integration.last_sync_error = str(e)
+                integration.last_sync_error = type(e).__name__
                 integration.last_sync_at = datetime.now(timezone.utc)
                 
                 await db.commit()
@@ -290,77 +290,10 @@ async def _process_lead(db: AsyncSession, integration: Integration, lead_data: L
 
 
 @shared_task
-def process_webhook_task(tenant_id: str, webhook_id: str, payload: dict, headers: dict):
-    """Process incoming webhook from integration."""
-    logger.info("Processing webhook", tenant_id=tenant_id, webhook_id=webhook_id)
-    
-    async def _process():
-        async with AsyncSessionLocal() as db:
-            # Load webhook endpoint
-            result = await db.execute(
-                select(WebhookEndpoint)
-                .where(WebhookEndpoint.id == UUID(webhook_id), WebhookEndpoint.tenant_id == UUID(tenant_id))
-            )
-            webhook = result.scalar_one_or_none()
-            if not webhook:
-                logger.error("Webhook not found", webhook_id=webhook_id)
-                return
-
-            # Load integration
-            integration = None
-            if webhook.integration_id:
-                result = await db.execute(
-                    select(Integration).where(Integration.id == webhook.integration_id)
-                )
-                integration = result.scalar_one_or_none()
-
-            # Get credentials if needed
-            credentials = {}
-            if integration and integration.credentials:
-                cred = integration.credentials[0]
-                import json
-                credentials = json.loads(cred.credentials_encrypted)
-                credentials.update({
-                    "access_token": cred.access_token,
-                    "refresh_token": cred.refresh_token,
-                })
-
-            # Process webhook
-            integration_service = IntegrationService()
-            events = await integration_service.process_webhook(
-                integration_type=integration.type.value if integration else "webhook",
-                payload=payload,
-                secret=webhook.secret,
-            )
-
-            for event in events:
-                if "lead_data" in event and event["lead_data"]:
-                    lead_data = event["lead_data"]
-                    if isinstance(lead_data, dict):
-                        lead_data = LeadData(**lead_data)
-                    
-                    if integration:
-                        await _process_lead(db, integration, lead_data)
-                    else:
-                        # Create generic lead from webhook
-                        await _create_lead_from_webhook(db, UUID(tenant_id), lead_data, webhook)
-
-                # Create activity
-                from app.models import Activity, ActivityTypeEnum
-                activity = Activity(
-                    tenant_id=UUID(tenant_id),
-                    type=ActivityTypeEnum.EMAIL_REPLIED,  # Generic webhook received
-                    subject=f"Webhook received: {webhook.name}",
-                    description=f"Event: {event.get('event_type', 'unknown')}",
-                    metadata=event.get("event_data", {}),
-                    correlation_id=event.get("lead_id"),
-                )
-                db.add(activity)
-
-            await db.commit()
-            logger.info("Webhook processed", webhook_id=webhook_id, events=len(events))
-
-    asyncio.run(_process())
+def process_webhook_task(tenant_id: str, event_id: str):
+    """Only previously verified, persisted ingress events may enter processing."""
+    from app.workers.tasks.foundation_tasks import deliver_event
+    return deliver_event.run(tenant_id=tenant_id, event_id=event_id)
 
 
 async def _create_lead_from_webhook(db: AsyncSession, tenant_id: UUID, lead_data: LeadData, webhook: WebhookEndpoint):
@@ -418,12 +351,12 @@ async def _create_lead_from_webhook(db: AsyncSession, tenant_id: UUID, lead_data
 
 
 @shared_task
-def scheduled_integration_sync():
+def scheduled_integration_sync(tenant_id: str):
     """Run scheduled sync for all integrations with sync_enabled=True."""
     logger.info("Running scheduled integration syncs")
     
     async def _sync_all():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             now = datetime.now(timezone.utc)
             
             result = await db.execute(
@@ -457,7 +390,7 @@ def scheduled_integration_sync():
                 await db.flush()
 
                 # Queue sync task
-                sync_integration_task.delay(str(integration.id), str(sync_log.id), False)
+                sync_integration_task.delay(tenant_id, str(integration.id), str(sync_log.id), False)
 
             await db.commit()
 
@@ -465,12 +398,12 @@ def scheduled_integration_sync():
 
 
 @shared_task
-def validate_all_integrations():
+def validate_all_integrations(tenant_id: str):
     """Validate all integration credentials."""
     logger.info("Validating all integrations")
     
     async def _validate():
-        async with AsyncSessionLocal() as db:
+        async with tenant_db_context(tenant_id) as db:
             result = await db.execute(
                 select(Integration)
                 .where(Integration.status.in_([IntegrationStatusEnum.CONNECTED, IntegrationStatusEnum.PENDING]))

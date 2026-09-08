@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crm_migrator
+      POSTGRES_PASSWORD: ${MIGRATION_DATABASE_PASSWORD:?Set a migration database password}
+      POSTGRES_DB: globexa_crm
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm_migrator -d globexa_crm"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a Redis password}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    environment: &runtime
+      APP_ENVIRONMENT: production
+      APP_DEBUG: "false"
+      DATABASE_HOST: postgres
+      DATABASE_USERNAME: globexa_runtime
+      DATABASE_PASSWORD: ${RUNTIME_DATABASE_PASSWORD:?Set a runtime database password}
+      DATABASE_NAME: globexa_crm
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
+      SECURITY_SECRET_KEY: ${SECURITY_SECRET_KEY:?Set an independent JWT key}
+      SECURITY_CREDENTIAL_ENCRYPTION_KEY: ${SECURITY_CREDENTIAL_ENCRYPTION_KEY:?Set a Fernet key}
+    ports: ["127.0.0.1:8000:8000"]
+    networks: [data, egress]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  worker:
+    build: .
+    environment: *runtime
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--queues=celery,emails,campaigns,ai,integrations,usage"]
+    networks: [data, egress]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout=5"]
+      interval: 60s
+      timeout: 10s
+  beat:
+    build: .
+    environment: *runtime
+    command: ["celery", "-A", "app.workers.celery_app", "beat", "--schedule=/tmp/celerybeat-schedule"]
+    networks: [data]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck: {disable: true}
+networks:
+  data: {internal: true}
+  egress: {}
+volumes:
+  postgres_data: {}

@@ -19,14 +19,15 @@ celery_app = Celery(
         "app.workers.tasks.ai_tasks_v2",
         "app.workers.tasks.integration_tasks_v2",
         "app.workers.tasks.usage_tasks",
+        "app.workers.tasks.foundation_tasks",
     ],
 )
 
 # Celery configuration
 celery_app.conf.update(
-    task_serializer=settings.celery.task_serializer,
-    result_serializer=settings.celery.result_serializer,
-    accept_content=settings.celery.accept_content,
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
     timezone=settings.celery.timezone,
     enable_utc=settings.celery.enable_utc,
     task_track_started=settings.celery.task_track_started,
@@ -52,35 +53,8 @@ celery_app.conf.update(
     task_send_sent_event=True,
 )
 
-# Periodic tasks (Celery Beat)
+# System dispatcher enumerates the global tenant registry only; child jobs are scoped.
 celery_app.conf.beat_schedule = {
-    # Daily usage aggregation
-    "aggregate-daily-usage": {
-        "task": "app.workers.tasks.usage_tasks.aggregate_daily_usage",
-        "schedule": crontab(hour=1, minute=0),  # 1 AM daily
-    },
-    # Cleanup old audit logs (keep 1 year)
-    "cleanup-audit-logs": {
-        "task": "app.workers.tasks.usage_tasks.cleanup_old_audit_logs",
-        "schedule": crontab(hour=2, minute=0, day_of_week=0),  # Weekly Sunday 2 AM
-    },
-    # Check subscription status
-    "check-subscriptions": {
-        "task": "app.workers.tasks.usage_tasks.check_subscription_status",
-        "schedule": crontab(hour=3, minute=0),  # Daily 3 AM
-    },
-    # Process scheduled campaigns
-    "process-scheduled-campaigns": {
-        "task": "app.workers.tasks.campaign_tasks_v2.process_scheduled_campaigns",
-        "schedule": 60.0,  # Every minute
-    },
-    # Retry failed email sends
-    "retry-failed-emails": {
-        "task": "app.workers.tasks.campaign_tasks_v2.retry_failed_emails",
-        "schedule": 300.0,  # Every 5 minutes
-    },
+    "tenant-tick": {"task": "app.workers.tasks.foundation_tasks.dispatch_scheduled", "schedule": 60.0},
 }
-
-
-# For direct imports
 __all__ = ["celery_app"]

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+from app.models import Deal
 """
 Leads API routes for Globexa CRM.
 """

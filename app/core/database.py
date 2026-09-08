@@ -46,13 +46,14 @@ def create_engine() -> AsyncEngine:
     """Create async database engine."""
     # Use NullPool for worker processes to avoid connection pooling issues with forking
     # In production, you might want to use a proper connection pool
-    use_null_pool = settings.app.environment in ("test", "development")
+    use_null_pool = settings.app.environment in ("test", "testing", "development")
     
     kwargs = {
         "url": settings.database.url,
         "pool_recycle": settings.database.pool_recycle,
         "pool_pre_ping": True,
         "echo": settings.database.echo,
+        "hide_parameters": True,
     }
     
     if not use_null_pool:
@@ -110,6 +111,9 @@ async def init_db() -> None:
     """Initialize database - just verify connection, don't create tables (Alembic manages schema)."""
     async with engine.begin() as conn:
         await conn.execute(text("SELECT 1"))
+        if settings.app.environment == "production":
+            from app.core.runtime_security import verify_runtime_security
+            await verify_runtime_security(conn)
 
 
 async def close_db() -> None:
@@ -125,3 +129,7 @@ def get_sync_engine():
         settings.database.sync_url,
         poolclass=NullPool,
     )
+# Install security and outbox lifecycle listeners for all Session instances.
+from app.core import tenant_context  # noqa: F401,E402
+
+from app.core import events  # noqa: F401,E402

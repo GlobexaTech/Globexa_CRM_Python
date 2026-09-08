@@ -4,7 +4,8 @@ Password hashing, JWT tokens, and cryptographic helpers.
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from jose import jwt, JWTError
+import jwt
+from jwt import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 import secrets
 
@@ -51,7 +52,7 @@ def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta
 def decode_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and validate a JWT token."""
     try:
-        payload = jwt.decode(token, settings.security.secret_key, algorithms=[settings.security.algorithm])
+        payload = jwt.decode(token, settings.security.secret_key, algorithms=[settings.security.algorithm], options={"require": ["exp", "sub", "tenant_id", "type"]})
         return payload
     except JWTError:
         return None

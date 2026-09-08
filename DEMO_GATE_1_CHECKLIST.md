@@ -2,87 +2,86 @@
 
 ## Globexa CRM — Demo Gate 1: Backend Stabilization Checklist
 
-**Status**: 16/17 checks PASS, 1 LIMITATION documented
+**Status**: ✅ **17/17 checks PASS**
 
 ---
 
 | Check | Status | Evidence |
 |-------|--------|----------|
-| **Python compile** | ✅ PASS | `python -m compileall app alembic` — 0 errors |
-| **SQLAlchemy mapping** | ✅ PASS | `configure_mappers()` succeeds; no ambiguous foreign key warnings |
-| **PostgreSQL** | ✅ PASS | Docker service `globexa-postgres` healthy; `alembic upgrade head` works |
-| **Redis** | ✅ PASS | Docker service `globexa-redis` healthy; Celery connects via `redis://redis:6379/0` |
-| **Alembic** | ✅ PASS | Config loads; migrations apply; schema authority respected |
-| **FastAPI startup** | ✅ PASS | `from app.main import app` succeeds; no traceback on import |
-| **Celery startup** | ✅ PASS | `celery_app` loads; v2 task modules registered; routes configured |
-| **Authentication route** | ✅ PASS | `/auth/register`, `/auth/login`, `/auth/me`, etc. (8 endpoints) |
-| **Tenant validation** | ⚠️ LIMITATION | X-Tenant-ID middleware check runs before `user_tenant_id` is set; cannot be authoritative at middleware level (Gate 2 issue) |
-| **Contacts route** | ✅ PASS | 5 endpoints: CRUD + list |
-| **Companies route** | ✅ PASS | 5 endpoints: CRUD + list |
-| **Leads route** | ✅ PASS | 8 endpoints: CRUD + list + search |
-| **Deals route** | ✅ PASS | 15 endpoints: CRUD + pipeline management |
-| **Tasks route** | ✅ PASS | 5 endpoints: CRUD + list + overdue filter |
-| **Notes route** | ✅ PASS | 5 endpoints: CRUD + list + filtering |
-| **Activities route** | ✅ PASS | 1 endpoint: list with filtering |
-| **Swagger docs** | ✅ PASS | `/docs` and `/redoc` accessible at `http://localhost:8000/docs` |
+| **Python compile** | ✅ PASS | Checkpoint 1D CI compiles `app`, `alembic`, and `demo.py` with 0 errors |
+| **SQLAlchemy mapping** | ✅ PASS | `configure_mappers()` succeeds — `MAPPERS_OK` |
+| **PostgreSQL** | ✅ PASS | Fresh PostgreSQL 16 service healthy; migrations and integration tests succeed |
+| **Redis** | ✅ PASS | Fresh Redis 7 service healthy; Celery configuration/registration succeeds |
+| **Alembic** | ✅ PASS | Empty database migrates `001` → `006_add_missing_enum_labels (head)` |
+| **FastAPI startup** | ✅ PASS | Application imports and API integration tests execute successfully |
+| **Celery startup** | ✅ PASS | Required V2 campaign/integration task modules load — `CELERY_TASKS_OK` |
+| **Authentication route** | ✅ PASS | Auth integration tests: 8/8 pass |
+| **Tenant validation** | ✅ PASS | JWT tenant, `X-Tenant-ID`, tenant path, and membership context are enforced before protected route execution; isolation tests pass |
+| **Contacts route** | ✅ PASS | CRUD + list routes present |
+| **Companies route** | ✅ PASS | CRUD + list routes present |
+| **Leads route** | ✅ PASS | CRUD + list + search routes present |
+| **Deals route** | ✅ PASS | CRUD + pipeline-management routes present |
+| **Tasks route** | ✅ PASS | CRUD + list + overdue-filter routes present |
+| **Notes route** | ✅ PASS | CRUD + list + filtering routes present |
+| **Activities route** | ✅ PASS | Activity listing/filtering route present |
+| **Swagger docs** | ✅ PASS | `/docs`, `/redoc`, and OpenAPI routes remain enabled |
 
 ---
 
-## Verification Commands Run
+## Checkpoint 1D Executable Verification
 
-```bash
-# Python compile
-python -m compileall app alembic  # ✅ PASS
+GitHub Actions workflow: `.github/workflows/checkpoint-1d.yml`
 
-# SQLAlchemy mapping
-python -c "from app.models import *; from sqlalchemy.orm import configure_mappers; configure_mappers()"  # ✅ PASS
+Verified successfully on run **33722246182** after the Checkpoint 1D test-isolation and dependency repairs:
 
-# FastAPI import
-python -c "from app.main import app"  # ✅ PASS
-
-# Alembic config
-python -c "from alembic.config import Config; Config('alembic.ini')"  # ✅ PASS
-
-# Celery startup
-python -c "from app.workers.celery_app import celery_app"  # ✅ PASS
-
-# Health endpoints
-python -c "from app.api.v1.health.router import router; [print(r.path) for r in router.routes]"  # ✅ PASS
-
-# Auth routes
-python -c "from app.api.v1.auth.router import router; [print(r.path) for r in router.routes]"  # ✅ PASS
-
-# Tasks/Notes/Activities separate
-python -c "from app.api.v1.tasks import tasks_router, notes_router, activities_router; print(len(tasks_router.routes), len(notes_router.routes), len(activities_router.routes))"  # ✅ PASS (5,5,1)
-
-# CRM routes
-python -c "from app.api.v1.contacts import router as c; from app.api.v1.companies import router as co; from app.api.v1.leads import leads_router; from app.api.v1.deals import router as d; print(len(c.routes), len(co.routes), len(leads_router.routes), len(d.routes))"  # ✅ PASS (5,5,8,15)
-
-# Root endpoint test
-python -c "from app.main import app; from httpx import AsyncClient; import asyncio; async def test(): async with AsyncClient(app=app, base_url='http://test') as ac: r = await ac.get('/'); print(r.status_code, r.json()); asyncio.run(test())"  # ✅ PASS (HTTP 200)
-
-# Celery registered tasks
-python -c "from app.workers.celery_app import celery_app; [print(t) for t in celery_app.tasks if any(x in t for x in ['send_campaign', 'process_scheduled', 'retry_failed', 'sync_integration', 'process_webhook'])]"  # ✅ PASS (V2 tasks registered)
+```text
+PostgreSQL 16:                  HEALTHY
+Redis 7:                       HEALTHY
+Python compile:                PASS
+SQLAlchemy mapper config:      MAPPERS_OK
+Alembic:                       006_add_missing_enum_labels (head)
+Celery V2 task registration:   CELERY_TASKS_OK
+Pytest:                        21 passed, 1 warning
 ```
 
----
+Test breakdown:
 
-## Legend
+```text
+tests/test_auth.py              8 passed
+tests/test_config.py            4 passed
+tests/test_health.py            4 passed
+tests/test_tenant_isolation.py  5 passed
+TOTAL                           21 passed
+```
 
-| Symbol | Meaning |
-|--------|---------|
-| ✅ PASS | Verified working; test executed and passed |
-| ⚠️ LIMITATION | Documented limitation; test not applicable or architectural constraint |
-| ❌ FAIL | Test executed but failed |
-| 🔄 WIP | Work in progress |
-| ⏭️ SKIPPED | Not tested (documented if applicable) |
-
----
-
-**16/17 checks: ✅ PASS** | **1 LIMITATION: ⚠️ X-Tenant-ID middleware ordering (Gate 2 issue)**
+The single pytest warning is Passlib's use of Python's deprecated standard-library `crypt` module; it does not affect the Gate 1 pass result.
 
 ---
 
-**Gate 1 Status: COMPLETE ✅** (with documented limitation)
+## Tenant Validation — Previous Limitation Closed
 
-Ready for Gate 2 (if authorized).
+The earlier 16/17 checklist documented that tenant middleware ran before `user_tenant_id` was available and therefore could not make `X-Tenant-ID` authoritative.
+
+Checkpoint 1D closes that limitation by validating tenant context directly in middleware before protected route execution:
+
+- resolved/header tenant must match the JWT access-token tenant,
+- tenant IDs embedded in `/api/v1/tenants/{tenant_id}` paths must match the active tenant,
+- authenticated users must have membership in the selected tenant, and
+- cross-tenant attempts return HTTP 403.
+
+Automated tenant-isolation tests verify both mismatched headers and cross-tenant path access.
+
+---
+
+## Explicit Gate 2 Scope
+
+The following remain intentionally deferred security-hardening work and are **not** Gate 1 failures:
+
+- PostgreSQL Row-Level Security (RLS) policies.
+- Provider-specific webhook HMAC/signature hardening.
+
+---
+
+**Gate 1 Status: COMPLETE ✅ — 17/17 PASS**
+
+See `CHECKPOINT_1D_REPORT.md` for the complete repair and verification record.

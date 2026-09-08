@@ -58,6 +58,8 @@ async def login(
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
 
     if not user:
+        from app.core.auth_audit import failed_authentication
+        await failed_authentication(form_data.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -76,6 +78,7 @@ async def login(
         )
 
     tokens = await auth_service.create_tokens(user, default_membership.tenant_id)
+    await auth_service._audit_log(default_membership.tenant_id, user.id, "auth.login", "user", str(user.id))
     return tokens
 
 
@@ -150,11 +153,12 @@ async def update_current_user(
 @router.post("/logout")
 async def logout(
     response: Response,
+    db: AsyncSession = Depends(get_db),
     current_user: tuple[User, Membership] = Depends(get_current_active_user),
 ):
     """Logout - client should discard tokens."""
-    # For stateless JWT, logout is client-side
-    # Could add token blacklist here if needed
+    user, membership = current_user
+    await AuthService(db)._audit_log(membership.tenant_id, user.id, "auth.logout", "user", str(user.id))
     return {"message": "Successfully logged out"}
 
 

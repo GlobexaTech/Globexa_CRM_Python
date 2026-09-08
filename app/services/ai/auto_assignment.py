@@ -1,3 +1,4 @@
+from app.models import Contact
 """
 AI Auto-Assignment Service for Globexa CRM.
 Hybrid rule-based + AI assignment with explainable reasoning.

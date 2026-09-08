@@ -1,46 +1,20 @@
-# Dockerfile for Globexa CRM
+FROM python:3.11-slim AS builder
+WORKDIR /src
+COPY pyproject.toml README.md ./
+COPY app ./app
+RUN pip install --upgrade pip setuptools && pip wheel --wheel-dir /wheels .
+
 FROM python:3.11-slim
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create app user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Set work directory
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 APP_ENVIRONMENT=production APP_DEBUG=false
 WORKDIR /app
-
-# Install Python dependencies
-COPY pyproject.toml ./
-RUN pip install --upgrade pip && \
-    pip install -e ".[dev]" && \
-    pip install 'bcrypt<5' --upgrade
-
-# Copy application code
-COPY . .
-
-# Change ownership to app user
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
-
-# Expose port
+COPY --from=builder /wheels /wheels
+RUN pip install --no-index --find-links=/wheels globexa-crm && rm -rf /wheels \
+    && groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home app
+COPY config.yaml alembic.ini ./
+COPY alembic ./alembic
+COPY scripts/provision_runtime.py ./scripts/provision_runtime.py
+USER 10001:10001
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/live || exit 1
-
-# Default command
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -48,7 +48,7 @@ class FirecrawlAdapter(IntegrationAdapter):
                 )
                 return response.status_code == 200
         except Exception as e:
-            logger.error("Firecrawl credential validation failed", error=str(e))
+            logger.error("Firecrawl credential validation failed", error=type(e).__name__)
             return False
     
     async def sync_leads(
@@ -111,8 +111,8 @@ class FirecrawlAdapter(IntegrationAdapter):
                 error_details={"status_code": e.response.status_code},
             )
         except Exception as e:
-            logger.error("Firecrawl sync failed", error=str(e))
-            return SyncResult(success=False, error_message=str(e))
+            logger.error("Firecrawl sync failed", error=type(e).__name__)
+            return SyncResult(success=False, error_message=type(e).__name__)
         
         return SyncResult(
             success=True,
@@ -257,7 +257,7 @@ class FirecrawlAdapter(IntegrationAdapter):
                         lead_data = self._parse_firecrawl_result(result, search_params.query)
                         leads.append(lead_data)
                     except Exception as e:
-                        logger.error("Failed to parse Firecrawl result", error=str(e))
+                        logger.error("Failed to parse Firecrawl result", error=type(e).__name__)
                         
         except httpx.HTTPStatusError as e:
             return SyncResult(
@@ -266,8 +266,8 @@ class FirecrawlAdapter(IntegrationAdapter):
                 error_details={"status_code": e.response.status_code},
             )
         except Exception as e:
-            logger.error("Firecrawl search failed", error=str(e))
-            return SyncResult(success=False, error_message=str(e))
+            logger.error("Firecrawl search failed", error=type(e).__name__)
+            return SyncResult(success=False, error_message=type(e).__name__)
         
         return SyncResult(
             success=True,

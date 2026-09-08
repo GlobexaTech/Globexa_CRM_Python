@@ -2,7 +2,10 @@
 Main FastAPI application for Globexa CRM.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
+from app.core.input_security import protect_input
+from app.api.v1.hooks import router as hooks_router
+from app.api.v1.foundation import router as foundation_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -77,6 +80,7 @@ app = FastAPI(
     redoc_url="/redoc" if _get_settings().app.debug else None,
     openapi_url="/openapi.json" if _get_settings().app.debug else None,
     lifespan=lifespan,
+    dependencies=[Depends(protect_input)],
 )
 
 # CORS middleware
@@ -112,11 +116,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     logger.warning(
         "Validation error",
         path=request.url.path,
-        errors=exc.errors(),
+        errors=[{"loc": e["loc"], "type": e["type"]} for e in exc.errors()],
     )
     return JSONResponse(
         status_code=422,
-        content={"detail": "Validation error", "errors": exc.errors()},
+        content={"detail": "Validation error", "errors": [{"loc": e["loc"], "type": e["type"]} for e in exc.errors()]},
     )
 
 
@@ -125,8 +129,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(
         "Unhandled exception",
         path=request.url.path,
-        error=str(exc),
-        exc_info=True,
+        error=type(exc).__name__,
     )
     return JSONResponse(
         status_code=500,
@@ -135,6 +138,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+app.include_router(hooks_router, prefix="/api/v1")
+app.include_router(foundation_router, prefix="/api/v1")
 app.include_router(health_router)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(tenants_router, prefix="/api/v1")
