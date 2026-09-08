@@ -7,6 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
+from pydantic import BaseModel, Field
+from app.core.rbac import Permission
+from app.api.deps import require_permission
 
 from app.core.database import get_db
 from app.services.crm.serialization import scalar_response
@@ -27,13 +30,53 @@ from app.schemas import (
 from app.models import Deal, Pipeline, Stage, Contact, Company, User
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
+require_pipeline_manage = require_permission(Permission.DEALS_PIPELINE_MANAGE)
+
+
+class StageOrderInput(BaseModel):
+    stage_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+@router.put("/pipelines/{pipeline_id}/stages/order", response_model=List[StageResponse])
+async def reorder_stages(
+    pipeline_id: UUID,
+    data: StageOrderInput,
+    current_user: tuple = Depends(require_pipeline_manage),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID = Depends(get_tenant_id),
+):
+    """Atomically reorder all stages after validating the exact tenant stage set."""
+    pipeline = await db.scalar(select(Pipeline).where(
+        Pipeline.id == pipeline_id, Pipeline.tenant_id == tenant_id
+    ).with_for_update())
+    if not pipeline:
+        raise HTTPException(404, "Pipeline not found")
+    stages = (await db.scalars(select(Stage).where(
+        Stage.pipeline_id == pipeline_id, Stage.tenant_id == tenant_id
+    ).with_for_update())).all()
+    if len(data.stage_ids) != len(set(data.stage_ids)) or set(data.stage_ids) != {s.id for s in stages}:
+        raise HTTPException(422, "Provide every pipeline stage exactly once")
+    by_id = {stage.id: stage for stage in stages}
+    # Separate temporary positions preserve uniqueness if a deployment adds an index.
+    temporary = max((stage.order for stage in stages), default=0) + len(stages) + 1
+    for index, stage in enumerate(stages):
+        stage.order = temporary + index
+    await db.flush()
+    for index, stage_id in enumerate(data.stage_ids):
+        by_id[stage_id].order = index
+    await db.flush()
+    for stage in stages:
+        await db.refresh(stage)
+    response = [StageResponse.model_validate(by_id[stage_id]) for stage_id in data.stage_ids]
+    await db.commit()
+    return response
 
 
 # Pipeline endpoints
 @router.post("/pipelines", response_model=PipelineResponse, status_code=status.HTTP_201_CREATED)
 async def create_pipeline(
     data: PipelineCreate,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -56,7 +99,8 @@ async def create_pipeline(
     db.add(pipeline)
     await db.commit()
     await db.refresh(pipeline)
-    return pipeline
+    await db.refresh(pipeline, attribute_names=["stages"])
+    return PipelineResponse.model_validate(pipeline)
 
 
 @router.get("/pipelines", response_model=List[PipelineResponse])
@@ -99,7 +143,7 @@ async def get_pipeline(
 async def update_pipeline(
     pipeline_id: UUID,
     data: PipelineUpdate,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -129,13 +173,14 @@ async def update_pipeline(
     
     await db.commit()
     await db.refresh(pipeline)
-    return pipeline
+    await db.refresh(pipeline, attribute_names=["stages"])
+    return PipelineResponse.model_validate(pipeline)
 
 
 @router.delete("/pipelines/{pipeline_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pipeline(
     pipeline_id: UUID,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -163,7 +208,7 @@ async def delete_pipeline(
 async def create_stage(
     pipeline_id: UUID,
     data: StageCreate,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -176,6 +221,9 @@ async def create_stage(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     
+    if data.pipeline_id != pipeline_id:
+        raise HTTPException(422, "Stage pipeline must match the URL")
+
     # Check order uniqueness
     result = await db.execute(
         select(Stage).where(Stage.pipeline_id == pipeline_id, Stage.order == data.order)
@@ -184,7 +232,7 @@ async def create_stage(
         raise HTTPException(status_code=400, detail="Stage with this order already exists")
     
     stage = Stage(
-        **data.model_dump(),
+        **data.model_dump(exclude={"pipeline_id"}),
         tenant_id=tenant_id,
         pipeline_id=pipeline_id,
     )
@@ -215,7 +263,7 @@ async def list_stages(
 async def update_stage(
     stage_id: UUID,
     data: StageUpdate,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -248,7 +296,7 @@ async def update_stage(
 @router.delete("/stages/{stage_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_stage(
     stage_id: UUID,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_pipeline_manage),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -580,4 +628,4 @@ async def move_deal(
     
     await db.commit()
     await db.refresh(deal)
-    return deal
+    return scalar_response(DealResponse, deal)

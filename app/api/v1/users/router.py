@@ -56,8 +56,15 @@ async def create_user(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Create user
+    # The identity SELECT policy must also permit INSERT RETURNING before the
+    # new membership exists. Bind only this server-generated identity after
+    # assignment/quota checks, then restore the authenticated actor immediately.
+    from uuid import uuid4
+    from app.core.tenant_context import bind_context
+    new_user_id = uuid4()
+    await bind_context(db, tenant_id, new_user_id)
     user = User(
+        id=new_user_id,
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
@@ -71,6 +78,7 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
+    await bind_context(db, tenant_id, current_user[0].id)
 
     # Create membership
     membership = Membership(
@@ -268,7 +276,8 @@ async def add_user_to_tenant(
     db.add(membership)
     await db.commit()
     await db.refresh(membership)
-    return membership
+    await db.refresh(membership, attribute_names=["user", "tenant"])
+    return MembershipResponse.model_validate(membership)
 
 
 @router.patch("/{user_id}/memberships", response_model=MembershipResponse)
@@ -323,7 +332,8 @@ async def update_membership(
 
     await db.commit()
     await db.refresh(membership)
-    return membership
+    await db.refresh(membership, attribute_names=["user", "tenant"])
+    return MembershipResponse.model_validate(membership)
 
 
 @router.delete("/{user_id}/memberships", status_code=status.HTTP_204_NO_CONTENT)

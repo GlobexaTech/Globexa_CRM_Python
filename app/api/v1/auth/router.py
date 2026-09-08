@@ -26,6 +26,14 @@ settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+@router.get("/permissions", response_model=dict[str, list[str]])
+async def current_permissions(current_user=Depends(get_current_active_user)):
+    """Return the active membership's authoritative role grants for UI guards."""
+    from app.core.rbac import get_role_permissions
+
+    return {"permissions": sorted(get_role_permissions(current_user[1].role))}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     data: UserRegister,

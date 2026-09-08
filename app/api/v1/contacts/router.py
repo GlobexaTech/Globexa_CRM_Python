@@ -50,7 +50,8 @@ async def create_contact(
     db.add(contact)
     await db.commit()
     await db.refresh(contact)
-    return contact
+    await db.refresh(contact, attribute_names=["company"])
+    return ContactResponse.model_validate(contact)
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -115,7 +116,9 @@ async def get_contact(
     contact = result.scalar_one_or_none()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return contact
+    await db.refresh(contact)
+    await db.refresh(contact, attribute_names=["company"])
+    return ContactResponse.model_validate(contact)
 
 
 @router.patch("/{contact_id}", response_model=ContactResponse)
@@ -153,7 +156,8 @@ async def update_contact(
     contact.updated_by_id = user.id
     await db.commit()
     await db.refresh(contact)
-    return contact
+    await db.refresh(contact, attribute_names=["company"])
+    return ContactResponse.model_validate(contact)
 
 
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, AliasChoices
 from app.models import LeadStatusEnum, LeadSourceEnum, TaskStatusEnum, TaskPriorityEnum
 
 
@@ -218,7 +218,7 @@ class FeatureEntitlementBase(BaseSchema):
     feature_key: str
     enabled: bool
     limit_value: Optional[int] = None
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = Field(default_factory=dict, validation_alias=AliasChoices("metadata_", "metadata"), serialization_alias="metadata")
 
 
 class FeatureEntitlementCreate(BaseModel):

@@ -68,7 +68,7 @@ async def create_lead(
     db.add(lead)
     await db.commit()
     await db.refresh(lead)
-    return lead
+    return await lead_response(db, lead)
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -153,7 +153,7 @@ async def get_lead(
     lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return lead
+    return await lead_response(db, lead)
 
 
 @router.patch("/{lead_id}", response_model=LeadResponse)
@@ -213,7 +213,7 @@ async def update_lead(
     lead.updated_by_id = user.id
     await db.commit()
     await db.refresh(lead)
-    return lead
+    return await lead_response(db, lead)
 
 
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -279,7 +279,7 @@ async def assign_lead(
     
     await db.commit()
     await db.refresh(lead)
-    return lead
+    return await lead_response(db, lead)
 
 
 # Lead qualification endpoint
@@ -315,7 +315,7 @@ async def qualify_lead(
     
     await db.commit()
     await db.refresh(lead)
-    return lead
+    return await lead_response(db, lead)
 
 
 # Lead conversion endpoint
@@ -388,4 +388,12 @@ async def convert_lead(
     
     await db.commit()
     await db.refresh(lead)
-    return lead
+    return await lead_response(db, lead)
+
+async def lead_response(db, lead):
+    """Load the declared response graph explicitly, including nested contact company."""
+    await db.refresh(lead)
+    await db.refresh(lead, attribute_names=["owner", "contact", "company"])
+    if lead.contact:
+        await db.refresh(lead.contact, attribute_names=["company"])
+    return LeadResponse.model_validate(lead)

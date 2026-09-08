@@ -28,7 +28,8 @@ class PostgresSearch:
         vector = func.to_tsvector(literal_column("'simple'"), literal_column(expression))
         term = func.websearch_to_tsquery(literal_column("'simple'"), query)
         rank = func.ts_rank(vector, term)
-        result = await self.db.execute(select(model.id, rank.label("rank"), literal_column(expression).label("content")).where(
+        relations = [field for field in ("conversation_id", "contact_id", "company_id", "lead_id", "deal_id") if hasattr(model, field)]
+        result = await self.db.execute(select(model.id, rank.label("rank"), literal_column(expression).label("content"), *[getattr(model, field) for field in relations]).where(
             model.tenant_id == tenant_id, vector.op("@@")(term)).order_by(rank.desc(), model.id).limit(limit))
         return [{"id": str(row.id), "rank": row.rank, "entity": entity, "title": row.content[:120],
-                 "snippet": row.content[:300]} for row in result]
+                 "snippet": row.content[:300], **{field: str(getattr(row, field)) if getattr(row, field) else None for field in relations}} for row in result]

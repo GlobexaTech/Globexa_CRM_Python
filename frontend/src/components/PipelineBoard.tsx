@@ -1,1270 +1,1179 @@
 "use client";
-
-import {
-  useEffect,
-  useRef,
-  useState,
-  type DragEvent,
-} from "react";
-
+import { useRef, useState, type FormEvent } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Columns3,
   List,
-  Mail,
-  Search,
   Plus,
-  Sparkles,
+  Search,
   GripVertical,
-  CheckSquare,
   Trash2,
-  X,
+  ArrowLeft,
+  ArrowRight,
+  Pencil,
 } from "lucide-react";
-
-import LeadDrawer from "@/components/LeadDrawer";
-import LeadFilters from "@/components/LeadFilters";
-
-type Lead = {
-  id: number;
-  name: string;
-  email: string;
-  source: string;
-  score: number;
-  stage: string;
-};
-
-const LEADS_KEY = "globexa-pipeline";
-const STAGES_KEY = "globexa-stages";
-
-const defaultStages = [
-  "New",
-  "Contacted",
-  "Qualified",
-  "Proposal",
-  "Won",
-  "Lost",
-];
-
-const initialLeads: Lead[] = [
-  {
-    id: 1,
-    name: "Aman Sharma",
-    email: "aman@example.com",
-    source: "Facebook",
-    score: 92,
-    stage: "New",
-  },
-  {
-    id: 2,
-    name: "Priya Singh",
-    email: "priya@example.com",
-    source: "Instagram",
-    score: 95,
-    stage: "New",
-  },
-  {
-    id: 3,
-    name: "Rahul Mehta",
-    email: "rahul@example.com",
-    source: "Referral",
-    score: 79,
-    stage: "Contacted",
-  },
-  {
-    id: 4,
-    name: "Sarah Khan",
-    email: "sarah@example.com",
-    source: "Website",
-    score: 88,
-    stage: "Qualified",
-  },
-];
+import { useSession } from "@/auth/SessionProvider";
+import { useResource } from "@/hooks/useResource";
+import { useAction } from "@/hooks/useAction";
+import { api } from "@/api/client";
+import { Dialog } from "./Dialog";
+import { ResourceState } from "./ResourceState";
+import { useConfirm } from "./ConfirmProvider";
+import { JobStatus } from "./JobStatus";
+import type {
+  Deal,
+  DealCreate,
+  Paginated,
+  Pipeline,
+  PipelineStage,
+  Job,
+} from "@/types/crm";
+import { crm, queryPath, formatMoney } from "@/services/crm";
+import {
+  control,
+  button,
+  primary,
+  Field,
+  EntityPicker,
+  Pagination,
+  useDebounced,
+} from "@/app/leads/CrmFields";
 
 export default function PipelineBoard() {
-  const boardRef = useRef<HTMLDivElement>(null);
-
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [stages, setStages] = useState<string[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
-  const [selectedLead, setSelectedLead] =
-    useState<Lead | null>(null);
-
-  const [view, setView] =
-    useState<"board" | "table">("board");
-
+  const { can } = useSession();
+  const { confirm } = useConfirm();
+  const action = useAction();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedDeal = searchParams.get("deal");
+  const [pipelineId, setPipelineId] = useState("");
   const [search, setSearch] = useState("");
-  const [newStage, setNewStage] = useState("");
-  const [aiCommand, setAiCommand] = useState("");
-  const [message, setMessage] = useState("");
-
   const [stageFilter, setStageFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
-  const [scoreFilter, setScoreFilter] = useState("");
-  const [sort, setSort] = useState("default");
-
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-
-  const [dragStage, setDragStage] =
-    useState<string | null>(null);
-
-  const [emailOpen, setEmailOpen] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
-
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    try {
-      const savedLeads =
-        localStorage.getItem(LEADS_KEY);
-
-      const savedStages =
-        localStorage.getItem(STAGES_KEY);
-
-      const loadedLeads: Lead[] =
-        savedLeads
-          ? JSON.parse(savedLeads)
-          : initialLeads;
-
-      const normalized = loadedLeads.map(
-        (lead) => ({
-          ...lead,
-          email:
-            lead.email ||
-            `${lead.name
-              .replace(/\s+/g, ".")
-              .toLowerCase()}@example.com`,
-        })
-      );
-
-      setLeads(normalized);
-
-      setStages(
-        savedStages
-          ? JSON.parse(savedStages)
-          : defaultStages
-      );
-    } catch {
-      setLeads(initialLeads);
-      setStages(defaultStages);
-    }
-
-    setReady(true);
-  }, []);
-
-  function saveLeads(updated: Lead[]) {
-    setLeads(updated);
-
-    localStorage.setItem(
-      LEADS_KEY,
-      JSON.stringify(updated)
-    );
-  }
-
-  function saveStages(updated: string[]) {
-    setStages(updated);
-
-    localStorage.setItem(
-      STAGES_KEY,
-      JSON.stringify(updated)
-    );
-  }
-
-  function moveLead(
-    id: number,
-    stage: string
-  ) {
-    const updated = leads.map((lead) =>
-      lead.id === id
-        ? { ...lead, stage }
-        : lead
-    );
-
-    saveLeads(updated);
-
-    setSelectedLead((current) =>
-      current?.id === id
-        ? { ...current, stage }
-        : current
-    );
-
-    setMessage(
-      `Lead moved to ${stage}.`
-    );
-  }
-
-  function bulkMove(stage: string) {
-    if (!selected.length) return;
-
-    const updated = leads.map((lead) =>
-      selected.includes(lead.id)
-        ? { ...lead, stage }
-        : lead
-    );
-
-    saveLeads(updated);
-
-    if (
-      selectedLead &&
-      selected.includes(selectedLead.id)
-    ) {
-      setSelectedLead({
-        ...selectedLead,
-        stage,
-      });
-    }
-
-    setMessage(
-      `${selected.length} lead(s) moved to ${stage}.`
-    );
-  }
-
-  function deleteSelected() {
-    if (!selected.length) return;
-
-    const approved = window.confirm(
-      `Delete ${selected.length} selected lead(s)?`
-    );
-
-    if (!approved) return;
-
-    saveLeads(
-      leads.filter(
-        (lead) =>
-          !selected.includes(lead.id)
-      )
-    );
-
-    if (
-      selectedLead &&
-      selected.includes(selectedLead.id)
-    ) {
-      setSelectedLead(null);
-    }
-
-    setSelected([]);
-
-    setMessage(
-      "Selected leads deleted."
-    );
-  }
-
-  function moveStage(
-    from: string,
-    to: string
-  ) {
-    if (!from || from === to) return;
-
-    const updated = [...stages];
-
-    const fromIndex =
-      updated.indexOf(from);
-
-    const toIndex =
-      updated.indexOf(to);
-
-    if (
-      fromIndex === -1 ||
-      toIndex === -1
-    ) {
-      return;
-    }
-
-    updated.splice(fromIndex, 1);
-    updated.splice(toIndex, 0, from);
-
-    saveStages(updated);
-  }
-
-  function addStage(name: string) {
-    const stage = name.trim();
-
-    if (!stage) return false;
-
-    const exists = stages.some(
-      (item) =>
-        item.toLowerCase() ===
-        stage.toLowerCase()
-    );
-
-    if (exists) {
-      setMessage(
-        `Stage "${stage}" already exists.`
-      );
-
-      return false;
-    }
-
-    saveStages([
-      ...stages,
-      stage,
-    ]);
-
-    setMessage(
-      `Stage "${stage}" created.`
-    );
-
-    return true;
-  }
-
-  function addManualStage() {
-    if (addStage(newStage)) {
-      setNewStage("");
-    }
-  }
-
-  function runAICommand() {
-    const command =
-      aiCommand.trim();
-
-    const match =
-      command.match(
-        /(?:add|create|make).*(?:stage)(?: called| named)?\s+["']?(.+?)["']?$/i
-      ) ||
-      command.match(
-        /(?:add|create|make)\s+["']?(.+?)["']?\s+stage$/i
-      );
-
-    if (!match) {
-      setMessage(
-        'Try: "Add a stage called Follow Up"'
-      );
-
-      return;
-    }
-
-    if (addStage(match[1])) {
-      setAiCommand("");
-    }
-  }
-
-  function toggleLead(id: number) {
-    setSelected((old) =>
-      old.includes(id)
-        ? old.filter(
-            (item) => item !== id
-          )
-        : [...old, id]
-    );
-  }
-
-  const sources = [
-    ...new Set(
-      leads.map(
-        (lead) => lead.source
-      )
-    ),
-  ];
-
-  let filtered = leads.filter(
-    (lead) => {
-      const haystack =
-        `${lead.name} ${lead.email} ${lead.source} ${lead.stage}`
-          .toLowerCase();
-
-      const matchesSearch =
-        haystack.includes(
-          search.toLowerCase()
-        );
-
-      const matchesStage =
-        !stageFilter ||
-        lead.stage === stageFilter;
-
-      const matchesSource =
-        !sourceFilter ||
-        lead.source === sourceFilter;
-
-      const matchesScore =
-        !scoreFilter ||
-        (scoreFilter === "low"
-          ? lead.score < 70
-          : lead.score >=
-            Number(scoreFilter));
-
-      return (
-        matchesSearch &&
-        matchesStage &&
-        matchesSource &&
-        matchesScore
-      );
-    }
+  const [view, setView] = useState<"board" | "table">("board");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [edited, setEdited] = useState<Deal>();
+  const [pipelineDialog, setPipelineDialog] = useState<
+    "create" | "edit" | null
+  >(null);
+  const [stageDialog, setStageDialog] = useState<
+    PipelineStage | "create" | null
+  >(null);
+  const [moves, setMoves] = useState<Record<string, string>>({});
+  const [owner, setOwner] = useState("");
+  const term = useDebounced(search);
+  const pipelines = useResource<Pipeline[]>(
+    "/deals/pipelines",
+    can("deals:read"),
   );
-
-  if (sort === "score-high") {
-    filtered = [...filtered].sort(
-      (a, b) =>
-        b.score - a.score
+  const linked = useResource<Deal>(
+    `/deals/${requestedDeal}`,
+    Boolean(requestedDeal) && can("deals:read"),
+  );
+  const chosenPipeline =
+    pipelineId || linked.data?.pipeline_id || pipelines.data?.[0]?.id || "";
+  const pipeline = pipelines.data?.find((v) => v.id === chosenPipeline);
+  const stagesQuery = useResource<PipelineStage[]>(
+    `/deals/pipelines/${chosenPipeline}/stages`,
+    Boolean(chosenPipeline) && can("deals:read"),
+  );
+  const stages = stagesQuery.data ?? [];
+  const query = useResource<Paginated<Deal>>(
+    queryPath("/deals", {
+      pipeline_id: chosenPipeline,
+      stage_id: stageFilter,
+      owner_id: owner,
+      search: term,
+      page,
+      page_size: 20,
+    }),
+    Boolean(chosenPipeline) && can("deals:read"),
+  );
+  const rows = (query.data?.items ?? []).map((deal) =>
+    moves[deal.id] ? { ...deal, stage_id: moves[deal.id] } : deal,
+  );
+  const visibleSelected = selected.filter((id) =>
+    rows.some((row) => row.id === id),
+  );
+  const currentDeal = edited ?? linked.data;
+  async function move(id: string, stage_id: string) {
+    if (action.pending || !can("deals:write")) return;
+    setMoves((old) => ({ ...old, [id]: stage_id }));
+    await action.run(async () => {
+      try {
+        const saved = await crm.moveDeal(id, stage_id);
+        if (edited?.id === id) setEdited(saved);
+        await query.refetch();
+        return saved;
+      } finally {
+        setMoves((old) => {
+          const next = { ...old };
+          delete next[id];
+          return next;
+        });
+      }
+    });
+  }
+  async function reorder(from: number, to: number) {
+    if (to < 0 || to >= stages.length || from === to) return;
+    const ids = stages.map((stage) => stage.id);
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    await action.run(() =>
+      api.put(`/deals/pipelines/${chosenPipeline}/stages/order`, {
+        stage_ids: ids,
+      }),
     );
   }
-
-  if (sort === "score-low") {
-    filtered = [...filtered].sort(
-      (a, b) =>
-        a.score - b.score
-    );
-  }
-
-  if (sort === "name") {
-    filtered = [...filtered].sort(
-      (a, b) =>
-        a.name.localeCompare(
-          b.name
-        )
-    );
-  }
-
-  if (sort === "stage") {
-    filtered = [...filtered].sort(
-      (a, b) =>
-        stages.indexOf(a.stage) -
-        stages.indexOf(b.stage)
-    );
-  }
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(
-      filtered.length / pageSize
+  async function bulkMove(stage_id: string) {
+    if (!stage_id) return;
+    if (
+      !(await confirm({
+        title: "Move selected deals?",
+        message: `Move ${visibleSelected.length} deals on this page? Each move is saved individually.`,
+        confirmText: "Move deals",
+      }))
     )
-  );
-
-  const tableLeads =
-    filtered.slice(
-      (page - 1) * pageSize,
-      page * pageSize
-    );
-
-  useEffect(() => {
-    setPage(1);
-  }, [
-    search,
-    stageFilter,
-    sourceFilter,
-    scoreFilter,
-    sort,
-    pageSize,
-  ]);
-
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [page, totalPages]);
-
-  const visibleIds =
-    filtered.map(
-      (lead) => lead.id
-    );
-
-  const allSelected =
-    visibleIds.length > 0 &&
-    visibleIds.every(
-      (id) =>
-        selected.includes(id)
-    );
-
-  function toggleAll() {
-    if (allSelected) {
-      setSelected((old) =>
-        old.filter(
-          (id) =>
-            !visibleIds.includes(id)
-        )
-      );
-
       return;
-    }
-
-    setSelected((old) => [
-      ...new Set([
-        ...old,
-        ...visibleIds,
-      ]),
-    ]);
+    await action.run(async () => {
+      try {
+        for (const id of visibleSelected) {
+          await crm.moveDeal(id, stage_id);
+          setSelected((old) => old.filter((v) => v !== id));
+        }
+      } finally {
+        await query.refetch();
+      }
+    });
   }
-
-  function autoScroll(
-    e: DragEvent<HTMLDivElement>
-  ) {
-    const board =
-      boardRef.current;
-
-    if (!board) return;
-
-    const rect =
-      board.getBoundingClientRect();
-
-    const edge = 130;
-    const speed = 32;
-
+  async function deleteSelected() {
     if (
-      e.clientX <
-      rect.left + edge
-    ) {
-      board.scrollLeft -= speed;
-    }
-
-    if (
-      e.clientX >
-      rect.right - edge
-    ) {
-      board.scrollLeft += speed;
-    }
+      !(await confirm({
+        title: "Delete selected deals?",
+        message: `Delete ${visibleSelected.length} deals? Deletions are individual and cannot be undone.`,
+        tone: "danger",
+        confirmText: "Delete",
+      }))
+    )
+      return;
+    await action.run(async () => {
+      try {
+        for (const id of visibleSelected) {
+          await api.delete(`/deals/${id}`);
+          setSelected((old) => old.filter((v) => v !== id));
+        }
+      } finally {
+        await query.refetch();
+      }
+    });
   }
-
-  if (!ready) {
-    return (
-      <div className="card flex min-h-96 items-center justify-center text-sm text-[var(--muted)]">
-        Loading pipeline...
-      </div>
+  async function removeStage(stage: PipelineStage) {
+    if (
+      !(await confirm({
+        title: "Delete stage?",
+        message: `Delete ${stage.name}? The backend rejects stages that still contain deals.`,
+        tone: "danger",
+        confirmText: "Delete stage",
+      }))
+    )
+      return;
+    await action.run(() => api.delete(`/deals/stages/${stage.id}`));
+  }
+  function closeDeal() {
+    setOpen(false);
+    setEdited(undefined);
+    if (requestedDeal) router.replace("/pipeline");
+  }
+  function toggle(id: string) {
+    setSelected((old) =>
+      old.includes(id) ? old.filter((v) => v !== id) : [...old, id],
     );
   }
-
   return (
     <>
-      {/* TOP TOOLBAR */}
-
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="card flex min-w-[250px] flex-1 items-center gap-2 px-4">
-          <Search
-            size={17}
-            className="text-[var(--muted)]"
-          />
-
-          <input
-            value={search}
-            onChange={(e) =>
-              setSearch(
-                e.target.value
-              )
-            }
-            placeholder="Search leads..."
-            className="w-full bg-transparent py-3 text-sm outline-none"
-          />
+      <p className="text-xs tracking-[3px] text-[var(--blue2)]">
+        CUSTOMER JOURNEY
+      </p>
+      <header className="mb-8 mt-2 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold">Deal Pipeline</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Move deals through the stages defined by your workspace.
+          </p>
         </div>
-
-        <div className="card flex items-center p-1">
-          <button
-            onClick={() =>
-              setView("board")
-            }
-            className={`rounded-lg p-2 ${
-              view === "board"
-                ? "bg-[var(--blue)]"
-                : ""
-            }`}
-            title="Board view"
-          >
-            <Columns3 size={17} />
-          </button>
-
-          <button
-            onClick={() =>
-              setView("table")
-            }
-            className={`rounded-lg p-2 ${
-              view === "table"
-                ? "bg-[var(--blue)]"
-                : ""
-            }`}
-            title="Table view"
-          >
-            <List size={17} />
-          </button>
-        </div>
-
-        <div className="card flex min-w-[220px] items-center p-1">
-          <input
-            value={newStage}
-            onChange={(e) =>
-              setNewStage(
-                e.target.value
-              )
-            }
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter"
-              ) {
-                addManualStage();
-              }
-            }}
-            placeholder="New stage..."
-            className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
-          />
-
-          <button
-            onClick={
-              addManualStage
-            }
-            className="rounded-lg bg-[var(--blue)] p-2"
-          >
-            <Plus size={17} />
-          </button>
-        </div>
-
-        <div className="card flex min-w-[280px] items-center p-1">
-          <Sparkles
-            size={17}
-            className="ml-3 text-[var(--cyan)]"
-          />
-
-          <input
-            value={aiCommand}
-            onChange={(e) =>
-              setAiCommand(
-                e.target.value
-              )
-            }
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter"
-              ) {
-                runAICommand();
-              }
-            }}
-            placeholder='Ask AI: "Add Follow Up stage"'
-            className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
-          />
-
-          <button
-            onClick={
-              runAICommand
-            }
-            className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-          >
-            Run
-          </button>
-        </div>
-      </div>
-
-      {/* FILTERS */}
-
-      <LeadFilters
-        stage={stageFilter}
-        source={sourceFilter}
-        score={scoreFilter}
-        sort={sort}
-        stages={stages}
-        sources={sources}
-        setStage={setStageFilter}
-        setSource={setSourceFilter}
-        setScore={setScoreFilter}
-        setSort={setSort}
-        reset={() => {
-          setStageFilter("");
-          setSourceFilter("");
-          setScoreFilter("");
-          setSort("default");
-          setSearch("");
-        }}
-      />
-
-      {/* BULK ACTIONS */}
-
-      <div className="mb-4 flex min-h-10 flex-wrap items-center gap-3">
-        <button
-          onClick={toggleAll}
-          className="flex items-center gap-2 text-sm text-[var(--muted)]"
-        >
-          <CheckSquare size={17} />
-
-          {allSelected
-            ? "Deselect all"
-            : `Select all (${filtered.length})`}
-        </button>
-
-        {selected.length > 0 && (
-          <>
-            <span className="text-sm text-[var(--cyan)]">
-              {selected.length} selected
-            </span>
-
-            <select
-              defaultValue=""
-              onChange={(e) => {
-                if (
-                  e.target.value
-                ) {
-                  bulkMove(
-                    e.target.value
-                  );
-
-                  e.target.value =
-                    "";
-                }
+        <div className="flex flex-wrap gap-2">
+          <Link className={button} href="/leads">
+            View leads
+          </Link>
+          {can("deals:write") && (
+            <button
+              className={`${primary} flex items-center gap-2`}
+              disabled={!stages.length}
+              onClick={() => {
+                setEdited(undefined);
+                setOpen(true);
               }}
-              className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
             >
-              <option
-                value=""
-                disabled
-              >
-                Move to...
-              </option>
-
-              {stages.map(
-                (stage) => (
-                  <option
-                    key={stage}
-                    value={stage}
-                  >
-                    {stage}
-                  </option>
-                )
-              )}
-            </select>
-
-            <button
-              onClick={() =>
-                setEmailOpen(true)
-              }
-              className="flex items-center gap-2 rounded-lg bg-[var(--blue)] px-3 py-2 text-sm"
-            >
-              <Mail size={16} />
-              Bulk Email
+              <Plus size={17} />
+              New Deal
             </button>
-
-            <button
-              onClick={
-                deleteSelected
-              }
-              className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-            >
-              <Trash2 size={16} />
-              Delete
-            </button>
-
-            <button
-              onClick={() =>
-                setSelected([])
-              }
-              className="rounded-lg border border-[var(--border)] p-2"
-            >
-              <X size={16} />
-            </button>
-          </>
-        )}
-      </div>
-
-      {message && (
-        <p className="mb-4 text-xs text-[var(--cyan)]">
-          ✦ {message}
-        </p>
-      )}
-
-      {/* BOARD */}
-
-      {view === "board" && (
-        <div
-          ref={boardRef}
-          onDragOver={(e) => {
-            e.preventDefault();
-            autoScroll(e);
-          }}
-          className="hide-scrollbar flex gap-3 overflow-x-auto"
-        >
-          {stages.map(
-            (stage) => {
-              const items =
-                filtered.filter(
-                  (lead) =>
-                    lead.stage ===
-                    stage
-                );
-
-              return (
-                <div
-                  key={stage}
-                  onDragOver={(e) =>
-                    e.preventDefault()
-                  }
-                  onDrop={(e) => {
-                    e.preventDefault();
-
-                    const type =
-                      e.dataTransfer.getData(
-                        "dragType"
-                      );
-
-                    if (
-                      type ===
-                      "stage"
-                    ) {
-                      moveStage(
-                        e.dataTransfer.getData(
-                          "stageName"
-                        ),
-                        stage
-                      );
-
-                      setDragStage(
-                        null
-                      );
-
-                      return;
-                    }
-
-                    const id =
-                      Number(
-                        e.dataTransfer.getData(
-                          "leadId"
-                        )
-                      );
-
-                    if (id) {
-                      moveLead(
-                        id,
-                        stage
-                      );
-                    }
-                  }}
-                  className={`card min-h-[420px] min-w-[210px] flex-1 p-3 transition ${
-                    dragStage ===
-                    stage
-                      ? "opacity-50"
-                      : ""
-                  }`}
-                >
-                  <div
-                    draggable
-                    onDragStart={(
-                      e
-                    ) => {
-                      e.dataTransfer.effectAllowed =
-                        "move";
-
-                      e.dataTransfer.setData(
-                        "dragType",
-                        "stage"
-                      );
-
-                      e.dataTransfer.setData(
-                        "stageName",
-                        stage
-                      );
-
-                      setDragStage(
-                        stage
-                      );
-                    }}
-                    onDragEnd={() =>
-                      setDragStage(
-                        null
-                      )
-                    }
-                    className="mb-4 flex cursor-grab items-center justify-between active:cursor-grabbing"
-                  >
-                    <div className="flex items-center gap-2">
-                      <GripVertical
-                        size={15}
-                        className="text-[var(--muted)]"
-                      />
-
-                      <b className="text-sm">
-                        {stage}
-                      </b>
-                    </div>
-
-                    <span className="text-xs text-[var(--muted)]">
-                      {items.length}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {items.map(
-                      (lead) => (
-                        <LeadCard
-                          key={
-                            lead.id
-                          }
-                          lead={
-                            lead
-                          }
-                          selected={selected.includes(
-                            lead.id
-                          )}
-                          toggle={() =>
-                            toggleLead(
-                              lead.id
-                            )
-                          }
-                          open={() =>
-                            setSelectedLead(
-                              lead
-                            )
-                          }
-                        />
-                      )
-                    )}
-
-                    {!items.length && (
-                      <p className="py-6 text-center text-xs text-[var(--muted)]">
-                        Drop leads here
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            }
           )}
         </div>
-      )}
-
-      {/* TABLE */}
-
-      {view === "table" && (
-        <div className="card overflow-hidden">
-          <div className="grid grid-cols-[40px_1.4fr_1.8fr_1fr_1fr_70px] border-b border-[var(--border)] px-4 py-2 text-[10px] uppercase tracking-wider text-[var(--muted)]">
-            <span />
-            <span>Lead</span>
-            <span>Email</span>
-            <span>Source</span>
-            <span>Stage</span>
-            <span>Score</span>
-          </div>
-
-          {tableLeads.map(
-            (lead) => (
-              <div
-                key={lead.id}
-                className="grid grid-cols-[40px_1.4fr_1.8fr_1fr_1fr_70px] items-center border-b border-[var(--border)] px-4 py-2 text-sm transition last:border-0 hover:bg-[var(--panel2)]"
+      </header>
+      {!can("deals:read") ? (
+        <p role="status" className="card p-8">
+          Your role cannot view deals.
+        </p>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <Field title="Pipeline">
+              <select
+                className={control}
+                value={chosenPipeline}
+                onChange={(e) => {
+                  setPipelineId(e.target.value);
+                  setPage(1);
+                  setStageFilter("");
+                  setSelected([]);
+                }}
               >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(
-                    lead.id
-                  )}
-                  onChange={() =>
-                    toggleLead(
-                      lead.id
-                    )
-                  }
-                />
-
+                {!pipelines.data?.length && (
+                  <option value="">No pipelines</option>
+                )}
+                {pipelines.data?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {can("deals:pipeline_manage") && (
+              <>
                 <button
-                  onClick={() =>
-                    setSelectedLead(
-                      lead
-                    )
-                  }
-                  className="truncate text-left font-medium hover:text-[var(--cyan)]"
+                  className={button}
+                  onClick={() => setPipelineDialog("create")}
                 >
-                  {lead.name}
+                  New pipeline
                 </button>
-
-                <span className="truncate text-[var(--muted)]">
-                  {lead.email}
-                </span>
-
-                <span className="truncate">
-                  {lead.source}
-                </span>
-
-                <span>
-                  <span className="rounded-md bg-[var(--panel2)] px-2 py-1 text-xs">
-                    {lead.stage}
-                  </span>
-                </span>
-
-                <span className="font-medium text-[var(--cyan)]">
-                  {lead.score}
-                </span>
-              </div>
-            )
+                <button
+                  className={button}
+                  disabled={!pipeline}
+                  onClick={() => setPipelineDialog("edit")}
+                >
+                  Manage pipeline
+                </button>
+                <button
+                  className={button}
+                  disabled={!pipeline}
+                  onClick={() => setStageDialog("create")}
+                >
+                  Add stage
+                </button>
+              </>
+            )}
+            <div className="ml-auto flex gap-1 rounded-xl border border-[var(--border)] p-1">
+              <button
+                className={view === "board" ? primary : button}
+                aria-label="Board view"
+                aria-pressed={view === "board"}
+                onClick={() => setView("board")}
+              >
+                <Columns3 size={17} />
+              </button>
+              <button
+                className={view === "table" ? primary : button}
+                aria-label="Table view"
+                aria-pressed={view === "table"}
+                onClick={() => setView("table")}
+              >
+                <List size={17} />
+              </button>
+            </div>
+          </div>
+          <div className="card mb-4 flex flex-wrap items-end gap-3 p-3">
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <Search size={17} />
+              <span className="sr-only">Search deals</span>
+              <input
+                className={control}
+                placeholder="Search deals…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                  setSelected([]);
+                }}
+              />
+            </label>
+            <Field title="Stage filter">
+              <select
+                className={control}
+                value={stageFilter}
+                onChange={(e) => {
+                  setStageFilter(e.target.value);
+                  setPage(1);
+                  setSelected([]);
+                }}
+              >
+                <option value="">All stages</option>
+                {stages.map((stage) => (
+                  <option key={stage.id} value={stage.id}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          {can("users:read") && (
+            <details className="mb-4">
+              <summary className="cursor-pointer text-sm">
+                Filter by owner
+              </summary>
+              <EntityPicker
+                entity="users"
+                title="Filter owner"
+                value={owner}
+                onChange={(v) => {
+                  setOwner(v);
+                  setPage(1);
+                  setSelected([]);
+                }}
+              />
+            </details>
           )}
-
-          {!tableLeads.length && (
-            <p className="p-8 text-center text-sm text-[var(--muted)]">
-              No leads found.
+          {can("deals:write") && rows.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <button
+                className={button}
+                onClick={() =>
+                  setSelected(
+                    visibleSelected.length === rows.length
+                      ? []
+                      : rows.map((row) => row.id),
+                  )
+                }
+              >
+                {visibleSelected.length === rows.length
+                  ? "Deselect page"
+                  : "Select this page"}
+              </button>
+              {visibleSelected.length > 0 && (
+                <>
+                  <span className="text-sm">
+                    {visibleSelected.length} selected
+                  </span>
+                  <label className="text-sm">
+                    Move selected
+                    <select
+                      aria-label="Move selected deals"
+                      className={control}
+                      value=""
+                      disabled={action.pending}
+                      onChange={(e) => void bulkMove(e.target.value)}
+                    >
+                      <option value="">Choose stage…</option>
+                      {stages.map((stage) => (
+                        <option value={stage.id} key={stage.id}>
+                          {stage.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {can("deals:delete") && (
+                    <button
+                      className={`${button} flex gap-2`}
+                      disabled={action.pending}
+                      onClick={() => void deleteSelected()}
+                    >
+                      <Trash2 size={16} />
+                      Delete selected
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {action.error && (
+            <p
+              className="mb-4 rounded-xl border border-red-200 p-4 text-red-700"
+              role="alert"
+            >
+              {action.error} The board shows the last confirmed stage after an
+              unsuccessful move.
             </p>
           )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3">
-            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-              <span>Show</span>
-
-              <select
-                value={pageSize}
-                onChange={(e) =>
-                  setPageSize(
-                    Number(
-                      e.target.value
-                    )
-                  )
-                }
-                className="rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1"
-              >
-                <option value={25}>
-                  25
-                </option>
-
-                <option value={50}>
-                  50
-                </option>
-
-                <option value={100}>
-                  100
-                </option>
-              </select>
-
-              <span>
-                leads ·{" "}
-                {filtered.length}{" "}
-                total
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3 text-sm">
-              <button
-                disabled={
-                  page === 1
-                }
-                onClick={() =>
-                  setPage(
-                    (old) =>
-                      Math.max(
-                        1,
-                        old - 1
-                      )
-                  )
-                }
-                className="rounded-lg border border-[var(--border)] px-3 py-1.5 disabled:opacity-30"
-              >
-                Previous
-              </button>
-
-              <span className="text-xs text-[var(--muted)]">
-                Page {page} of{" "}
-                {totalPages}
-              </span>
-
-              <button
-                disabled={
-                  page ===
-                  totalPages
-                }
-                onClick={() =>
-                  setPage(
-                    (old) =>
-                      Math.min(
-                        totalPages,
-                        old + 1
-                      )
-                  )
-                }
-                className="rounded-lg border border-[var(--border)] px-3 py-1.5 disabled:opacity-30"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DRAWER — FIXED VERSION */}
-
-      {selectedLead && (
-        <>
-          <div
-            onClick={() =>
-              setSelectedLead(null)
+          {action.pending && (
+            <p className="mb-3 text-sm" role="status">
+              Saving pipeline changes…
+            </p>
+          )}
+          <ResourceState
+            loading={
+              pipelines.isLoading || stagesQuery.isLoading || query.isLoading
             }
-            className="fixed inset-0 z-40 bg-black/50"
-          />
-
-          <LeadDrawer
-            lead={selectedLead}
-            stages={stages}
-            onStageChange={(
-              stage
-            ) =>
-              moveLead(
-                selectedLead.id,
-                stage
-              )
-            }
-            onClose={() =>
-              setSelectedLead(null)
-            }
-          />
+            error={pipelines.error || stagesQuery.error || query.error}
+            onRetry={() => {
+              void pipelines.refetch();
+              if (chosenPipeline) {
+                void stagesQuery.refetch();
+                void query.refetch();
+              }
+            }}
+          >
+            {!pipeline ? (
+              <p className="card p-8">
+                No pipeline is configured. A workspace manager can create one
+                above.
+              </p>
+            ) : !stages.length ? (
+              <p className="card p-8">Add a stage before creating a deal.</p>
+            ) : view === "board" ? (
+              <div
+                className="flex gap-3 overflow-x-auto pb-4"
+                aria-label="Deal board"
+              >
+                {stages
+                  .filter((stage) => !stageFilter || stageFilter === stage.id)
+                  .map((stage) => {
+                    const index = stages.findIndex((v) => v.id === stage.id);
+                    const stageDeals = rows.filter(
+                      (deal) => deal.stage_id === stage.id,
+                    );
+                    return (
+                      <section
+                        key={stage.id}
+                        aria-label={`${stage.name} stage`}
+                        onDragOver={(e) => {
+                          if (can("deals:write")) e.preventDefault();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const id = e.dataTransfer.getData(
+                            "application/globexa-deal",
+                          );
+                          if (rows.some((row) => row.id === id))
+                            void move(id, stage.id);
+                        }}
+                        className="card min-h-[420px] min-w-[260px] flex-1 p-3"
+                      >
+                        <header className="mb-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <h2 className="flex items-center gap-2 font-semibold">
+                              <GripVertical size={16} />
+                              {stage.name}
+                            </h2>
+                            <span className="rounded-lg bg-[var(--panel2)] px-2 py-1 text-xs">
+                              {stageDeals.length} on page
+                            </span>
+                          </div>
+                          {can("deals:pipeline_manage") && (
+                            <div className="mt-2 flex gap-1">
+                              <button
+                                className="rounded p-2"
+                                disabled={index === 0 || action.pending}
+                                aria-label={`Move ${stage.name} left`}
+                                onClick={() => void reorder(index, index - 1)}
+                              >
+                                <ArrowLeft size={14} />
+                              </button>
+                              <button
+                                className="rounded p-2"
+                                disabled={
+                                  index === stages.length - 1 || action.pending
+                                }
+                                aria-label={`Move ${stage.name} right`}
+                                onClick={() => void reorder(index, index + 1)}
+                              >
+                                <ArrowRight size={14} />
+                              </button>
+                              <button
+                                className="rounded p-2"
+                                aria-label={`Edit ${stage.name} stage`}
+                                onClick={() => setStageDialog(stage)}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                className="rounded p-2"
+                                disabled={action.pending}
+                                aria-label={`Delete ${stage.name} stage`}
+                                onClick={() => void removeStage(stage)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </header>
+                        <div className="space-y-3">
+                          {stageDeals.map((deal) => (
+                            <DealCard
+                              key={deal.id}
+                              deal={deal}
+                              stages={stages}
+                              canWrite={can("deals:write")}
+                              selected={visibleSelected.includes(deal.id)}
+                              pending={action.pending}
+                              toggle={() => toggle(deal.id)}
+                              open={() => {
+                                setEdited(deal);
+                                setOpen(true);
+                              }}
+                              move={(next) => void move(deal.id, next)}
+                            />
+                          ))}
+                          {!stageDeals.length && (
+                            <p className="py-6 text-center text-xs text-[var(--muted)]">
+                              No deals on this page
+                            </p>
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="card overflow-x-auto">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="border-b border-[var(--border)] text-xs uppercase text-[var(--muted)]">
+                    <tr>
+                      <th className="p-4">Deal</th>
+                      <th>Value</th>
+                      <th>Owner</th>
+                      <th>Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((deal) => (
+                      <tr
+                        key={deal.id}
+                        className="border-b border-[var(--border)] last:border-0"
+                      >
+                        <td className="p-4">
+                          <button
+                            className="font-semibold text-[var(--blue)]"
+                            onClick={() => {
+                              setEdited(deal);
+                              setOpen(true);
+                            }}
+                          >
+                            {deal.title}
+                          </button>
+                        </td>
+                        <td>
+                          {formatMoney(deal.value ?? 0, deal.currency ?? "USD")}
+                        </td>
+                        <td>
+                          {deal.owner?.full_name ||
+                            deal.owner_id ||
+                            "Unassigned"}
+                        </td>
+                        <td className="p-3">
+                          <select
+                            aria-label={`Stage for ${deal.title}`}
+                            className={control}
+                            disabled={!can("deals:write") || action.pending}
+                            value={deal.stage_id}
+                            onChange={(e) => void move(deal.id, e.target.value)}
+                          >
+                            {stages.map((stage) => (
+                              <option key={stage.id} value={stage.id}>
+                                {stage.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!rows.length && <p className="p-6">No matching deals.</p>}
+              </div>
+            )}
+          </ResourceState>
+          {query.data && (
+            <Pagination
+              page={page}
+              total={query.data.total}
+              totalPages={query.data.total_pages}
+              onPage={(v) => {
+                setPage(v);
+                setSelected([]);
+              }}
+            />
+          )}
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            Board counts cover this page. Values remain in each deal’s stored
+            currency. Stage selectors provide a keyboard and touch alternative
+            to dragging.
+          </p>
         </>
       )}
+      <Dialog
+        open={open || Boolean(requestedDeal)}
+        title={currentDeal ? "Deal details" : "New deal"}
+        onClose={closeDeal}
+      >
+        {(open || requestedDeal) && (
+          <ResourceState
+            loading={Boolean(requestedDeal) && linked.isLoading}
+            error={requestedDeal ? linked.error : null}
+            onRetry={() => void linked.refetch()}
+          >
+            {can("deals:write") ? (
+              <DealForm
+                key={currentDeal?.id ?? chosenPipeline}
+                deal={currentDeal}
+                pipelineId={currentDeal?.pipeline_id ?? chosenPipeline}
+                onSaved={closeDeal}
+              />
+            ) : (
+              currentDeal && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold">{currentDeal.title}</h3>
+                  <p>{currentDeal.description || "No description"}</p>
+                  <p>
+                    {formatMoney(
+                      currentDeal.value ?? 0,
+                      currentDeal.currency ?? "USD",
+                    )}
+                  </p>
+                </div>
+              )
+            )}
+          </ResourceState>
+        )}
+      </Dialog>
+      <Dialog
+        open={Boolean(pipelineDialog)}
+        title={pipelineDialog === "edit" ? "Manage pipeline" : "New pipeline"}
+        onClose={() => setPipelineDialog(null)}
+      >
+        {pipelineDialog && (
+          <PipelineForm
+            pipeline={pipelineDialog === "edit" ? pipeline : undefined}
+            onSaved={(id) => {
+              setPipelineId(id ?? "");
+              setPipelineDialog(null);
+            }}
+          />
+        )}
+      </Dialog>
+      <Dialog
+        open={Boolean(stageDialog)}
+        title={stageDialog === "create" ? "New stage" : "Edit stage"}
+        onClose={() => setStageDialog(null)}
+      >
+        {stageDialog && (
+          <StageForm
+            stage={stageDialog === "create" ? undefined : stageDialog}
+            pipelineId={chosenPipeline}
+            nextOrder={
+              Math.max(-1, ...stages.map((stage) => stage.order ?? 0)) + 1
+            }
+            onSaved={() => setStageDialog(null)}
+          />
+        )}
+      </Dialog>
+    </>
+  );
+}
+function DealCard({
+  deal,
+  stages,
+  selected,
+  toggle,
+  open,
+  move,
+  canWrite,
+  pending,
+}: {
+  deal: Deal;
+  stages: PipelineStage[];
+  selected: boolean;
+  toggle: () => void;
+  open: () => void;
+  move: (id: string) => void;
+  canWrite: boolean;
+  pending: boolean;
+}) {
+  return (
+    <article
+      draggable={canWrite && !pending}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/globexa-deal", deal.id);
+      }}
+      className={`rounded-xl border bg-[var(--panel2)] p-3 ${selected ? "border-[var(--blue)]" : "border-[var(--border)]"}`}
+    >
+      <div className="flex gap-2">
+        {canWrite && (
+          <input
+            type="checkbox"
+            aria-label={`Select ${deal.title}`}
+            checked={selected}
+            onChange={toggle}
+          />
+        )}
+        <button className="min-w-0 flex-1 text-left" onClick={open}>
+          <b className="break-words text-sm">{deal.title}</b>
+          <p className="mt-2 text-sm text-[var(--blue)]">
+            {formatMoney(deal.value ?? 0, deal.currency ?? "USD")}
+          </p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            {deal.company?.name ||
+              deal.contact?.first_name ||
+              (deal.company_id || deal.contact_id
+                ? "Linked customer"
+                : "No linked customer")}
+          </p>
+        </button>
+      </div>
+      <p className="mt-3 break-all text-xs text-[var(--muted)]">
+        Owner:{" "}
+        {deal.owner?.full_name ||
+          deal.owner?.email ||
+          deal.owner_id ||
+          "Unassigned"}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        {deal.lead_id && (
+          <Link href={`/customers/leads/${deal.lead_id}`}>Lead</Link>
+        )}
+        {deal.contact_id && (
+          <Link href={`/customers/contacts/${deal.contact_id}`}>Contact</Link>
+        )}
+        {deal.company_id && (
+          <Link href={`/customers/companies/${deal.company_id}`}>Company</Link>
+        )}
+      </div>
+      <p className="mt-3 text-xs text-[var(--muted)]">
+        Probability {deal.probability ?? 0}%
+      </p>
+      <div className="mt-1 h-1 rounded bg-[var(--border)]">
+        <div
+          className="h-1 rounded bg-[var(--blue)]"
+          style={{ width: `${deal.probability ?? 0}%` }}
+        />
+      </div>
+      <label className="mt-3 grid gap-1 text-xs">
+        Stage
+        <select
+          className={control}
+          aria-label={`Stage for ${deal.title}`}
+          value={deal.stage_id}
+          disabled={!canWrite || pending}
+          onChange={(e) => move(e.target.value)}
+        >
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </article>
+  );
+}
 
-      {/* BULK EMAIL */}
-
-      {emailOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="card w-full max-w-[620px] p-6">
-            <div className="mb-5 flex items-start justify-between">
-              <div>
-                <p className="text-xs tracking-[2px] text-[var(--blue2)]">
-                  BULK EMAIL
-                </p>
-
-                <h2 className="mt-1 text-xl font-semibold">
-                  Email{" "}
-                  {selected.length}{" "}
-                  Leads
-                </h2>
-              </div>
-
-              <button
-                onClick={() =>
-                  setEmailOpen(
-                    false
-                  )
-                }
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="mb-4 max-h-20 overflow-y-auto rounded-lg bg-[var(--panel2)] p-3 text-xs text-[var(--muted)]">
-              {leads
-                .filter((lead) =>
-                  selected.includes(
-                    lead.id
-                  )
-                )
-                .map(
-                  (lead) =>
-                    lead.email
-                )
-                .join(", ")}
-            </div>
-
+function DealForm({
+  deal,
+  pipelineId,
+  onSaved,
+}: {
+  deal?: Deal;
+  pipelineId: string;
+  onSaved: () => void;
+}) {
+  const { session, can } = useSession();
+  const action = useAction();
+  const aiAction = useAction();
+  const stagesQuery = useResource<PipelineStage[]>(
+    `/deals/pipelines/${pipelineId}/stages`,
+    Boolean(pipelineId),
+  );
+  const stages = stagesQuery.data ?? [];
+  const [title, setTitle] = useState(deal?.title ?? "");
+  const [stage, setStage] = useState(deal?.stage_id ?? "");
+  const [value, setValue] = useState(String(deal?.value ?? 0));
+  const [currency, setCurrency] = useState(deal?.currency ?? "USD");
+  const [description, setDescription] = useState(deal?.description ?? "");
+  const [owner, setOwner] = useState(deal?.owner_id ?? session?.user.id ?? "");
+  const [contact, setContact] = useState(deal?.contact_id ?? "");
+  const [company, setCompany] = useState(deal?.company_id ?? "");
+  const [lead, setLead] = useState(deal?.lead_id ?? "");
+  const [job, setJob] = useState("");
+  const [validation, setValidation] = useState("");
+  const aiKey = useRef(crypto.randomUUID());
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setValidation("");
+    if (
+      !title.trim() ||
+      !Number.isSafeInteger(Number(value)) ||
+      Number(value) < 0
+    ) {
+      setValidation(
+        "Enter a deal title and a non-negative whole-number value in minor units.",
+      );
+      return;
+    }
+    if (!Intl.supportedValuesOf("currency").includes(currency.toUpperCase())) {
+      setValidation(
+        "Choose a recognized three-letter currency code, such as USD, EUR or INR.",
+      );
+      return;
+    }
+    const body: DealCreate = {
+      custom_fields: deal?.custom_fields ?? {},
+      probability:
+        deal?.probability ??
+        stages.find((s) => s.id === (stage || stages[0]?.id))?.probability ??
+        0,
+      title: title.trim(),
+      pipeline_id: pipelineId,
+      stage_id: stage || stages[0]?.id,
+      value: Number(value),
+      currency: currency.toUpperCase(),
+      description: description || null,
+      owner_id: owner || null,
+      contact_id: contact || null,
+      company_id: company || null,
+      lead_id: lead || null,
+    };
+    await action.run(async () => {
+      if (deal) {
+        const { stage_id, ...fields } = body;
+        await crm.updateDeal(deal.id, fields);
+        if (stage_id !== deal.stage_id) await crm.moveDeal(deal.id, stage_id);
+      } else await crm.createDeal(body);
+      onSaved();
+    });
+  }
+  return (
+    <>
+      <form className="grid gap-4" onSubmit={submit}>
+        {validation && (
+          <p role="alert" className="text-red-700">
+            {validation}
+          </p>
+        )}
+        <Field title="Deal title">
+          <input
+            className={control}
+            value={title}
+            maxLength={255}
+            required
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field title="Stage">
+            <select
+              className={control}
+              required
+              value={stage || stages[0]?.id || ""}
+              onChange={(e) => setStage(e.target.value)}
+            >
+              <option value="" disabled>
+                Choose stage
+              </option>
+              {stages.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field title="Currency (three-letter code)">
             <input
-              value={subject}
-              onChange={(e) =>
-                setSubject(
-                  e.target.value
-                )
-              }
-              placeholder="Email subject"
-              className="card mb-3 w-full px-4 py-3 text-sm outline-none"
+              className={control}
+              required
+              pattern="[A-Za-z]{3}"
+              maxLength={3}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
             />
-
-            <textarea
-              value={emailBody}
-              onChange={(e) =>
-                setEmailBody(
-                  e.target.value
-                )
-              }
-              placeholder="Write your email..."
-              rows={8}
-              className="card w-full resize-none px-4 py-3 text-sm outline-none"
+          </Field>
+          <Field title="Value (minor units, e.g. 10000 = 100.00)">
+            <input
+              className={control}
+              type="number"
+              min={0}
+              step={1}
+              required
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
             />
-
-            <div className="mt-4 flex justify-end gap-2">
+          </Field>
+        </div>
+        <Field title="Description">
+          <textarea
+            className={control}
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <EntityPicker
+            entity="users"
+            title="Owner"
+            value={owner}
+            onChange={setOwner}
+          />
+          <EntityPicker
+            entity="contacts"
+            title="Contact"
+            value={contact}
+            onChange={setContact}
+          />
+          <EntityPicker
+            entity="companies"
+            title="Company"
+            value={company}
+            onChange={setCompany}
+          />
+          <EntityPicker
+            entity="leads"
+            title="Lead"
+            value={lead}
+            onChange={setLead}
+          />
+        </div>
+        {stagesQuery.error && <p role="alert">Stages could not load.</p>}
+        {action.error && (
+          <p role="alert" className="text-red-700">
+            {action.error}
+          </p>
+        )}
+        <button className={primary} disabled={action.pending || !stages.length}>
+          {action.pending ? "Saving…" : deal ? "Save deal" : "Create deal"}
+        </button>
+      </form>
+      {deal && (
+        <div className="mt-5 space-y-3">
+          {deal.lead_id && (
+            <Link
+              href={`/customers/leads/${deal.lead_id}`}
+              className="text-[var(--blue)]"
+            >
+              View lead Customer 360
+            </Link>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {can("ai:change_stage") && (
               <button
+                className={button}
+                disabled={aiAction.pending}
                 onClick={() =>
-                  setEmailOpen(
-                    false
-                  )
+                  void aiAction.run(async () => {
+                    const result = await api.post<Job>(
+                      "/operations/ai/requests",
+                      { capability: "next_best_action", entity_id: deal.id },
+                      { idempotencyKey: aiKey.current },
+                    );
+                    setJob(result.id);
+                    aiKey.current = crypto.randomUUID();
+                  })
                 }
-                className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm"
               >
-                Cancel
+                Request next best action
               </button>
-
+            )}
+            {can("ai:create_proposal") && (
               <button
-                onClick={() => {
-                  setMessage(
-                    `${selected.length} email(s) prepared for sending.`
-                  );
-
-                  setEmailOpen(
-                    false
-                  );
-                }}
-                className="rounded-lg bg-[var(--blue)] px-4 py-2 text-sm"
+                className={button}
+                disabled={aiAction.pending}
+                onClick={() =>
+                  void aiAction.run(async () => {
+                    const result = await api.post<Job>(
+                      "/operations/ai/requests",
+                      { capability: "proposal_draft", entity_id: deal.id },
+                      { idempotencyKey: aiKey.current },
+                    );
+                    setJob(result.id);
+                    aiKey.current = crypto.randomUUID();
+                  })
+                }
               >
-                Send Email
+                Draft proposal
               </button>
-            </div>
+            )}
           </div>
+          {aiAction.error && (
+            <p role="alert" className="text-red-700">
+              {aiAction.error}
+            </p>
+          )}
+          {job && <JobStatus jobId={job} />}
         </div>
       )}
     </>
   );
 }
-
-function LeadCard({
-  lead,
-  selected,
-  toggle,
-  open,
+function PipelineForm({
+  pipeline,
+  onSaved,
 }: {
-  lead: Lead;
-  selected: boolean;
-  toggle: () => void;
-  open: () => void;
+  pipeline?: Pipeline;
+  onSaved: (id?: string) => void;
 }) {
+  const [name, setName] = useState(pipeline?.name ?? "");
+  const action = useAction();
+  const { confirm } = useConfirm();
   return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        e.stopPropagation();
-
-        e.dataTransfer.effectAllowed =
-          "move";
-
-        e.dataTransfer.setData(
-          "dragType",
-          "lead"
-        );
-
-        e.dataTransfer.setData(
-          "leadId",
-          String(lead.id)
-        );
+    <form
+      className="grid gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void action.run(async () => {
+          const result = pipeline
+            ? await api.patch<Pipeline>(`/deals/pipelines/${pipeline.id}`, {
+                name: name.trim(),
+              })
+            : await crm.createPipeline(name.trim());
+          onSaved(result.id);
+        });
       }}
-      className={`rounded-xl border bg-[var(--panel2)] p-3 transition ${
-        selected
-          ? "border-[var(--blue)]"
-          : "border-[var(--border)] hover:border-[var(--blue2)]"
-      }`}
     >
-      <div className="flex gap-2">
+      <Field title="Pipeline name">
+        <input
+          required
+          maxLength={255}
+          className={control}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      {action.error && (
+        <p role="alert" className="text-red-700">
+          {action.error}
+        </p>
+      )}
+      <button className={primary} disabled={action.pending}>
+        {pipeline ? "Save pipeline" : "Create pipeline"}
+      </button>
+      {pipeline && (
+        <button
+          type="button"
+          className={button}
+          disabled={action.pending}
+          onClick={async () => {
+            if (
+              !(await confirm({
+                title: "Delete pipeline?",
+                message:
+                  "Only an empty pipeline can be deleted. This cannot be undone.",
+                tone: "danger",
+              }))
+            )
+              return;
+            void action.run(async () => {
+              await api.delete(`/deals/pipelines/${pipeline.id}`);
+              onSaved();
+            });
+          }}
+        >
+          Delete pipeline
+        </button>
+      )}
+    </form>
+  );
+}
+function StageForm({
+  stage,
+  pipelineId,
+  nextOrder,
+  onSaved,
+}: {
+  stage?: PipelineStage;
+  pipelineId: string;
+  nextOrder: number;
+  onSaved: () => void;
+}) {
+  const action = useAction();
+  const [name, setName] = useState(stage?.name ?? "");
+  const [probability, setProbability] = useState(stage?.probability ?? 0);
+  const [closed, setClosed] = useState(stage?.is_closed ?? false);
+  const [won, setWon] = useState(stage?.is_won ?? false);
+  return (
+    <form
+      className="grid gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void action.run(async () => {
+          if (stage)
+            await api.patch(`/deals/stages/${stage.id}`, {
+              name: name.trim(),
+              probability,
+              is_closed: closed || won,
+              is_won: won,
+            });
+          else
+            await crm.createStage(
+              pipelineId,
+              name.trim(),
+              nextOrder,
+              probability,
+              closed || won,
+              won,
+            );
+          onSaved();
+        });
+      }}
+    >
+      <Field title="Stage name">
+        <input
+          className={control}
+          required
+          maxLength={100}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <Field title="Probability (%)">
+        <input
+          className={control}
+          type="number"
+          min={0}
+          max={100}
+          step={1}
+          value={probability}
+          onChange={(e) => setProbability(Number(e.target.value))}
+        />
+      </Field>
+      <label className="flex items-center gap-2">
         <input
           type="checkbox"
-          checked={selected}
-          onChange={toggle}
-          onClick={(e) =>
-            e.stopPropagation()
-          }
-        />
-
-        <button
-          onClick={open}
-          className="min-w-0 flex-1 text-left"
-        >
-          <div className="flex justify-between gap-2">
-            <b className="truncate text-sm">
-              {lead.name}
-            </b>
-
-            <span className="text-xs text-[var(--cyan)]">
-              {lead.score}
-            </span>
-          </div>
-
-          <p className="mt-2 truncate text-xs text-[var(--muted)]">
-            {lead.source}
-          </p>
-        </button>
-      </div>
-
-      <div className="mt-3 h-1 rounded bg-[var(--border)]">
-        <div
-          className="h-1 rounded bg-[var(--blue)]"
-          style={{
-            width: `${lead.score}%`,
+          checked={closed || won}
+          onChange={(e) => {
+            setClosed(e.target.checked);
+            if (!e.target.checked) setWon(false);
           }}
         />
-      </div>
-    </div>
+        Closed stage
+      </label>
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={won}
+          onChange={(e) => {
+            setWon(e.target.checked);
+            if (e.target.checked) setClosed(true);
+          }}
+        />
+        Won stage
+      </label>
+      {action.error && (
+        <p role="alert" className="text-red-700">
+          {action.error}
+        </p>
+      )}
+      <button className={primary} disabled={action.pending}>
+        {stage ? "Save stage" : "Create stage"}
+      </button>
+    </form>
   );
 }

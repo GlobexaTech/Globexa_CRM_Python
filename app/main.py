@@ -99,6 +99,18 @@ app.add_middleware(TenantMiddleware, default_tenant_slug="globexatech" if _get_s
 
 
 # Exception handlers
+from fastapi.exceptions import ResponseValidationError
+
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request: Request, exc: ResponseValidationError):
+    # ResponseValidationError.__str__ can contain complete ORM inputs. Handle
+    # it explicitly so Uvicorn does not print payloads after the safe response.
+    logger.error("Response validation failed", path=request.url.path,
+                 errors=[{"loc": e["loc"], "type": e["type"]} for e in exc.errors()])
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     logger.warning(

@@ -283,7 +283,8 @@ async def create_note(
     db.add(note)
     await db.commit()
     await db.refresh(note)
-    return note
+    await db.refresh(note, attribute_names=["author"])
+    return NoteResponse.model_validate(note)
 
 
 @notes_router.get("", response_model=PaginatedResponse)
@@ -342,7 +343,8 @@ async def get_note(
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
-    return note
+    await db.refresh(note, attribute_names=["author"])
+    return NoteResponse.model_validate(note)
 
 
 @notes_router.patch("/{note_id}", response_model=NoteResponse)
@@ -373,7 +375,8 @@ async def update_note(
     
     await db.commit()
     await db.refresh(note)
-    return note
+    await db.refresh(note, attribute_names=["author"])
+    return NoteResponse.model_validate(note)
 
 
 @notes_router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)

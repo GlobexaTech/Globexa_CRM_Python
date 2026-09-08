@@ -1,108 +1,64 @@
 "use client";
-
 import { Filter, RotateCcw } from "lucide-react";
-
-type Props = {
-  stage: string;
-  source: string;
-  score: string;
-  sort: string;
-
-  stages: string[];
-  sources: string[];
-
-  setStage: (value: string) => void;
-  setSource: (value: string) => void;
-  setScore: (value: string) => void;
-  setSort: (value: string) => void;
-
-  reset: () => void;
-};
-
+import { LEAD_STATUSES, LEAD_SOURCES } from "@/types/crm";
+import { label } from "@/services/crm";
+import { control } from "@/app/leads/CrmFields";
 export default function LeadFilters({
-  stage,
+  status,
   source,
-  score,
-  sort,
-  stages,
-  sources,
-  setStage,
-  setSource,
-  setScore,
-  setSort,
-  reset,
-}: Props) {
-  const input =
-    "rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm outline-none";
-
+  onStatus,
+  onSource,
+  onReset,
+}: {
+  status: string;
+  source: string;
+  onStatus: (v: string) => void;
+  onSource: (v: string) => void;
+  onReset: () => void;
+}) {
   return (
-    <div className="card mb-4 flex flex-wrap items-center gap-2 p-2">
-
-      <div className="flex items-center gap-2 px-2 text-sm text-[var(--muted)]">
+    <div className="card mb-4 flex flex-wrap items-center gap-3 p-3">
+      <span className="flex items-center gap-2 text-sm">
         <Filter size={16} />
         Filters
-      </div>
-
-      <select
-        value={stage}
-        onChange={(e) => setStage(e.target.value)}
-        className={input}
-      >
-        <option value="">All Stages</option>
-
-        {stages.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-        className={input}
-      >
-        <option value="">All Sources</option>
-
-        {sources.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={score}
-        onChange={(e) => setScore(e.target.value)}
-        className={input}
-      >
-        <option value="">All Scores</option>
-        <option value="90">90+ High Intent</option>
-        <option value="80">80+</option>
-        <option value="70">70+</option>
-        <option value="low">Below 70</option>
-      </select>
-
-      <select
-        value={sort}
-        onChange={(e) => setSort(e.target.value)}
-        className={input}
-      >
-        <option value="default">Default Order</option>
-        <option value="score-high">Score: High → Low</option>
-        <option value="score-low">Score: Low → High</option>
-        <option value="name">Name: A → Z</option>
-        <option value="stage">Stage</option>
-      </select>
-
+      </span>
+      <label className="grid gap-1 text-xs">
+        Lead status
+        <select
+          className={control}
+          value={status}
+          onChange={(e) => onStatus(e.target.value)}
+        >
+          <option value="">All statuses</option>
+          {LEAD_STATUSES.map((v) => (
+            <option key={v} value={v}>
+              {label(v)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs">
+        Lead source
+        <select
+          className={control}
+          value={source}
+          onChange={(e) => onSource(e.target.value)}
+        >
+          <option value="">All sources</option>
+          {LEAD_SOURCES.map((v) => (
+            <option key={v} value={v}>
+              {label(v)}
+            </option>
+          ))}
+        </select>
+      </label>
       <button
-        onClick={reset}
-        className="ml-auto flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--muted)] hover:bg-[var(--panel2)] hover:text-white"
+        className="ml-auto flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
+        onClick={onReset}
       >
         <RotateCcw size={15} />
         Reset
       </button>
-
     </div>
   );
 }
