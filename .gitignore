@@ -75,3 +75,7 @@ dmypy.json
 
 # Generated CI and API contract evidence
 evidence/
+
+cp4-install.txt
+frontend/test-results/
+frontend/playwright-report/
