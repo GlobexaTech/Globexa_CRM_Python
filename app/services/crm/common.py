@@ -95,12 +95,19 @@ async def enqueue(
 
 
 def public_job(job):
+    result = dict(job.result or {})
+    if job.kind == "ai_hook":
+        result["suggestion"] = {
+            field: job.payload.get(field)
+            for field in ("capability", "entity_type", "entity_id")
+            if job.payload.get(field) is not None
+        }
     return {
         "id": job.id,
         "kind": job.kind,
         "status": job.status,
         "attempts": job.attempts,
-        "result": job.result,
+        "result": result,
         "error_code": job.error_code,
         "created_at": job.created_at,
     }

@@ -447,7 +447,7 @@ async def list_sync_logs(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """List integration sync logs."""
-    result = await db.execute(
+    query = (
         select(IntegrationSyncLog)
         .where(
             IntegrationSyncLog.integration_id == integration_id,
@@ -464,7 +464,7 @@ async def list_sync_logs(
     total = await db.scalar(total_query)
 
     result = await db.execute(
-        result.offset((params.page - 1) * params.page_size).limit(params.page_size)
+        query.offset((params.page - 1) * params.page_size).limit(params.page_size)
     )
     logs = result.scalars().all()
 

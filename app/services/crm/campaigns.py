@@ -356,8 +356,15 @@ async def update_stats(db, tenant_id, campaign_id):
     ):
         campaign.status, campaign.completed_at = CampaignStatusEnum.COMPLETED, now()
     await db.flush()
+    unknown = await db.scalar(select(func.count()).select_from(OperationJob).where(
+        OperationJob.tenant_id == tenant_id,
+        OperationJob.kind == "campaign_send",
+        OperationJob.payload["campaign_id"].astext == str(campaign_id),
+        OperationJob.status == "unknown",
+    ))
     return {
         "campaign_id": campaign.id,
+        "unknown": unknown,
         "status": "running"
         if campaign.status.value == "sending"
         else campaign.status.value,

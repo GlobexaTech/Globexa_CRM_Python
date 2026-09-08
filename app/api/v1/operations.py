@@ -368,7 +368,7 @@ async def workflow_executions(
         )
         .order_by(ExecutionLog.created_at.desc(), ExecutionLog.id)
     )
-    return await page(
+    result = await page(
         db,
         ExecutionLog,
         query,
@@ -383,6 +383,20 @@ async def workflow_executions(
             "error_code": r.error_code,
         },
     )
+    execution_ids = [str(item["id"]) for item in result["items"]]
+    if execution_ids:
+        jobs = (await db.scalars(select(OperationJob).where(
+            OperationJob.tenant_id == actor[0],
+            OperationJob.kind == "automation",
+            OperationJob.payload["execution_id"].astext.in_(execution_ids),
+        ).order_by(OperationJob.created_at.desc()))).all()
+        by_execution = {}
+        for job in jobs:
+            by_execution.setdefault(job.payload["execution_id"], job.id)
+        for item in result["items"]:
+            item["job_id"] = by_execution.get(str(item["id"]))
+    return result
+
 
 
 @router.get("/providers", response_model=list[dict])

@@ -1,926 +1,468 @@
 "use client";
-
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
-import {
-  Calendar,
-  CheckCircle2,
-  Database,
-  Globe,
-  HardDrive,
-  Mail,
-  Megaphone,
-  MessageSquare,
-  Plug,
-  RefreshCw,
-  Search,
-  Send,
-  Settings2,
-  Table2,
-  Webhook,
-  X,
-} from "lucide-react";
-
+import { useRef, useState } from "react";
+import { Plug, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
-
-type Status =
-  | "Connected"
-  | "Disconnected"
-  | "Attention";
-
-type Category =
-  | "Meta"
-  | "Google"
-  | "Messaging"
-  | "Sales"
-  | "Developer";
-
-type Integration = {
-  id: string;
-  name: string;
-  description: string;
-  category: Category;
-  status: Status;
-  lastSync: string;
-  account: string;
-  syncMode: string;
-  autoSync: boolean;
-};
-
-const KEY = "globexa-integrations";
-
-const defaults: Integration[] = [
-  {
-    id: "facebook-leads",
-    name: "Facebook Lead Ads",
-    description:
-      "Import leads generated from Facebook Lead Ads directly into Globexa CRM.",
-    category: "Meta",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "instagram",
-    name: "Instagram Business",
-    description:
-      "Connect Instagram conversations and lead activity with the CRM.",
-    category: "Meta",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Inbound",
-    autoSync: true,
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp Cloud API",
-    description:
-      "Handle WhatsApp conversations, notifications and customer follow-ups.",
-    category: "Meta",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "meta-ads",
-    name: "Meta Ads",
-    description:
-      "Sync campaign, spend and conversion information from Meta advertising.",
-    category: "Meta",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Inbound",
-    autoSync: true,
-  },
-
-  {
-    id: "gmail",
-    name: "Gmail / Google Workspace",
-    description:
-      "Send and receive CRM email through a connected Google Workspace account.",
-    category: "Google",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "calendar",
-    name: "Google Calendar",
-    description:
-      "Sync appointments, follow-ups and CRM meetings.",
-    category: "Google",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "drive",
-    name: "Google Drive",
-    description:
-      "Attach documents and customer files directly to CRM records.",
-    category: "Google",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "sheets",
-    name: "Google Sheets",
-    description:
-      "Import and export lead lists, reports and CRM datasets.",
-    category: "Google",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-
-  {
-    id: "telegram",
-    name: "Telegram",
-    description:
-      "Connect Telegram bots and customer conversations.",
-    category: "Messaging",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: true,
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    description:
-      "Send CRM notifications and workflow alerts to Slack.",
-    category: "Messaging",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Outbound",
-    autoSync: true,
-  },
-
-  {
-    id: "linkedin",
-    name: "LinkedIn",
-    description:
-      "Link professional prospect activity and business development workflows.",
-    category: "Sales",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Inbound",
-    autoSync: true,
-  },
-  {
-    id: "apollo",
-    name: "Apollo",
-    description:
-      "Import prospecting and enriched B2B lead information.",
-    category: "Sales",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Inbound",
-    autoSync: true,
-  },
-
-  {
-    id: "webhook",
-    name: "Webhook / REST API",
-    description:
-      "Connect custom websites, forms and external software through APIs.",
-    category: "Developer",
-    status: "Disconnected",
-    lastSync: "Never",
-    account: "",
-    syncMode: "Two-way",
-    autoSync: false,
-  },
-];
+import { Dialog } from "@/components/Dialog";
+import { JobStatus } from "@/components/JobStatus";
+import { ResourceState } from "@/components/ResourceState";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { useSession } from "@/auth/SessionProvider";
+import { useResource } from "@/hooks/useResource";
+import { useAction } from "@/hooks/useAction";
+import { operations, timestamp } from "@/services/operations";
+import type {
+  Integration,
+  IntegrationStatus,
+  LegacyPage,
+  Provider,
+  SyncLog,
+} from "@/types/operations";
 
 export default function IntegrationsPage() {
-  const [items, setItems] =
-    useState<Integration[]>([]);
-
-  const [search, setSearch] =
-    useState("");
-
-  const [category, setCategory] =
-    useState<Category | "All">("All");
-
-  const [selected, setSelected] =
-    useState<Integration | null>(null);
-
-  const [message, setMessage] =
-    useState("");
-
-  useEffect(() => {
-    try {
-      const saved =
-        localStorage.getItem(KEY);
-
-      setItems(
-        saved
-          ? JSON.parse(saved)
-          : defaults
-      );
-    } catch {
-      setItems(defaults);
-    }
-  }, []);
-
-  function save(
-    updated: Integration[]
-  ) {
-    setItems(updated);
-
-    localStorage.setItem(
-      KEY,
-      JSON.stringify(updated)
-    );
-  }
-
-  function connect(id: string) {
-    save(
-      items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: "Connected",
-              account:
-                item.account ||
-                "Connected account",
-              lastSync: "Just now",
-            }
-          : item
-      )
-    );
-
-    setMessage(
-      "Frontend connection enabled. Backend OAuth will be added during integration."
-    );
-  }
-
-  function disconnect(id: string) {
-    save(
-      items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: "Disconnected",
-              lastSync: "Never",
-            }
-          : item
-      )
-    );
-
-    setMessage(
-      "Integration disconnected."
-    );
-  }
-
-  function sync(id: string) {
-    save(
-      items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              lastSync:
-                new Date().toLocaleTimeString(
-                  [],
-                  {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }
-                ),
-            }
-          : item
-      )
-    );
-
-    setMessage(
-      "Sync completed in UI demo mode."
-    );
-  }
-
-  function updateIntegration(
-    updated: Integration
-  ) {
-    save(
-      items.map((item) =>
-        item.id === updated.id
-          ? updated
-          : item
-      )
-    );
-
-    setSelected(updated);
-  }
-
-  const filtered = useMemo(
-    () =>
-      items.filter((item) => {
-        const matchesSearch =
-          `${item.name} ${item.description} ${item.category}`
-            .toLowerCase()
-            .includes(
-              search.toLowerCase()
-            );
-
-        const matchesCategory =
-          category === "All" ||
-          item.category === category;
-
-        return (
-          matchesSearch &&
-          matchesCategory
-        );
-      }),
-    [items, search, category]
+  const { session, can } = useSession();
+  return (
+    <IntegrationWorkspace
+      key={`${session?.tenant_id}:${session?.version}`}
+      can={can}
+      tenantId={session?.tenant_id || ""}
+    />
   );
-
-  const connected =
-    items.filter(
-      (item) =>
-        item.status === "Connected"
-    ).length;
-
-  const attention =
-    items.filter(
-      (item) =>
-        item.status === "Attention"
-    ).length;
-
+}
+function IntegrationWorkspace({
+  can,
+  tenantId,
+}: {
+  can: (permission: string) => boolean;
+  tenantId: string;
+}) {
+  const providers = useResource<Provider[]>(
+    "/operations/providers",
+    can("integrations:read"),
+  );
+  const [page, setPage] = useState(1);
+  const integrations = useResource<LegacyPage<Integration>>(
+    `/integrations?page=${page}&page_size=20`,
+    can("integrations:read"),
+  );
+  const [provider, setProvider] = useState("");
+  const action = useAction();
   return (
     <main className="flex min-h-screen bg-[var(--bg)]">
-
       <Sidebar />
-
-      <section className="min-w-0 flex-1 p-8">
-
-        {/* HEADER */}
-
-        <header className="mb-8">
-
-          <p className="text-xs tracking-[3px] text-[var(--blue2)]">
-            CONNECTIVITY
+      <section className="min-w-0 flex-1 p-4 sm:p-8">
+        <header className="mb-6">
+          <p className="text-xs tracking-[3px] text-[var(--blue)]">
+            GLOBEXA CRM
           </p>
-
-          <h1 className="mt-2 text-3xl font-semibold">
-            Integrations
-          </h1>
-
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Connect Globexa CRM with your communication,
-            advertising, productivity and sales systems.
+          <h1 className="mt-2 text-3xl font-semibold">Integrations</h1>
+          <p className="crm-muted">
+            Provider capabilities and connection status from your workspace
           </p>
-
         </header>
-
-        {/* SUMMARY */}
-
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-
-          <Metric
-            label="Available Integrations"
-            value={items.length}
-          />
-
-          <Metric
-            label="Connected"
-            value={connected}
-          />
-
-          <Metric
-            label="Needs Attention"
-            value={attention}
-          />
-
-        </div>
-
-        {/* SEARCH */}
-
-        <div className="card mb-5 flex flex-wrap items-center gap-3 p-3">
-
-          <div className="flex min-w-[280px] flex-1 items-center gap-2 px-2">
-
-            <Search
-              size={17}
-              className="text-[var(--muted)]"
-            />
-
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(
-                  e.target.value
-                )
-              }
-              placeholder="Search integrations..."
-              className="w-full bg-transparent text-sm outline-none"
-            />
-
-          </div>
-
-          <select
-            value={category}
-            onChange={(e) =>
-              setCategory(
-                e.target
-                  .value as Category | "All"
-              )
-            }
-            className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
-          >
-            <option>All</option>
-            <option>Meta</option>
-            <option>Google</option>
-            <option>Messaging</option>
-            <option>Sales</option>
-            <option>Developer</option>
-          </select>
-
-        </div>
-
-        {message && (
-          <p className="mb-4 text-xs text-[var(--cyan)]">
-            ✦ {message}
-          </p>
+        {!can("integrations:read") ? (
+          <p role="alert">Your role cannot read integrations.</p>
+        ) : (
+          <>
+            <h2 className="mb-3 text-xl font-semibold">Available providers</h2>
+            <ResourceState
+              loading={providers.isLoading}
+              error={providers.error}
+              empty={providers.data?.length === 0}
+              onRetry={() => void providers.refetch()}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {providers.data?.map((item) => (
+                  <article className="card p-5" key={item.provider}>
+                    <div className="flex items-center gap-3">
+                      <Plug className="text-[var(--blue)]" />
+                      <h3 className="text-lg font-semibold capitalize">
+                        {item.provider.replaceAll("_", " ")}
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-sm">
+                      {item.capabilities.length
+                        ? `Capabilities: ${item.capabilities.join(", ").replaceAll("_", " ")}`
+                        : "Not available in this release"}
+                    </p>
+                    {item.capabilities.length > 0 && (
+                      <p className="crm-muted mt-2">
+                        Application configuration and provider authorization are
+                        required.{" "}
+                        {item.live_verified
+                          ? "Live verified by backend."
+                          : "Live provider verification not recorded."}
+                      </p>
+                    )}
+                    {item.capabilities.includes("connect") &&
+                    can("integrations:write") ? (
+                      <button
+                        className="crm-secondary mt-4"
+                        onClick={() => setProvider(item.provider)}
+                      >
+                        <Plus size={14} />
+                        Add {item.provider} integration
+                      </button>
+                    ) : (
+                      !item.capabilities.length && (
+                        <span className="mt-4 inline-block rounded-lg bg-[var(--panel2)] px-3 py-2 text-sm">
+                          Not available
+                        </span>
+                      )
+                    )}
+                  </article>
+                ))}
+              </div>
+            </ResourceState>
+            <div className="mb-3 mt-8 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold">Workspace connections</h2>
+              <button
+                className="crm-secondary"
+                onClick={() => void integrations.refetch()}
+              >
+                Refresh connections
+              </button>
+            </div>
+            <ResourceState
+              loading={integrations.isLoading}
+              error={integrations.error}
+              empty={integrations.data?.items.length === 0}
+              onRetry={() => void integrations.refetch()}
+            >
+              <div className="grid gap-4 xl:grid-cols-2">
+                {integrations.data?.items.map((item) => (
+                  <IntegrationCard
+                    key={item.id}
+                    integration={item}
+                    writable={can("integrations:write")}
+                    tenantId={tenantId}
+                  />
+                ))}
+              </div>
+            </ResourceState>
+            <nav className="crm-actions mt-4" aria-label="Integration pages">
+              <button
+                className="crm-secondary"
+                disabled={page === 1}
+                onClick={() => setPage(page - 1)}
+              >
+                Previous
+              </button>
+              <button
+                className="crm-secondary"
+                disabled={
+                  !integrations.data || page >= integrations.data.total_pages
+                }
+                onClick={() => setPage(page + 1)}
+              >
+                Next
+              </button>
+            </nav>
+          </>
         )}
-
-        {/* INTEGRATIONS */}
-
-        <div className="space-y-8">
-
-          {[
-            "Meta",
-            "Google",
-            "Messaging",
-            "Sales",
-            "Developer",
-          ].map((group) => {
-            const groupItems =
-              filtered.filter(
-                (item) =>
-                  item.category === group
-              );
-
-            if (!groupItems.length) {
-              return null;
-            }
-
-            return (
-              <section key={group}>
-
-                <div className="mb-3">
-
-                  <p className="text-xs tracking-[2px] text-[var(--blue2)]">
-                    {group.toUpperCase()}
-                  </p>
-
-                  <h2 className="mt-1 font-semibold">
-                    {group} Integrations
-                  </h2>
-
-                </div>
-
-                <div className="grid gap-4 xl:grid-cols-2">
-
-                  {groupItems.map(
-                    (integration) => (
-                      <IntegrationCard
-                        key={
-                          integration.id
-                        }
-                        integration={
-                          integration
-                        }
-                        onConnect={() =>
-                          connect(
-                            integration.id
-                          )
-                        }
-                        onDisconnect={() =>
-                          disconnect(
-                            integration.id
-                          )
-                        }
-                        onSync={() =>
-                          sync(
-                            integration.id
-                          )
-                        }
-                        onConfigure={() =>
-                          setSelected(
-                            integration
-                          )
-                        }
-                      />
-                    )
-                  )}
-
-                </div>
-
-              </section>
-            );
-          })}
-
-        </div>
-
+        <Dialog
+          open={!!provider}
+          title={`Add ${provider} integration`}
+          onClose={() => setProvider("")}
+        >
+          <form
+            className="crm-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = String(
+                new FormData(event.currentTarget).get("name"),
+              ).trim();
+              void action.run(async () => {
+                const result = await operations.createIntegration(
+                  provider,
+                  name,
+                );
+                setProvider("");
+                return result;
+              });
+            }}
+          >
+            <label className="crm-field">
+              Connection name
+              <input
+                name="name"
+                required
+                maxLength={255}
+                className="crm-input"
+                placeholder="Team inbox"
+              />
+            </label>
+            <p className="crm-muted">
+              The integration is created pending authorization. Use Authorize on
+              the connection to complete provider consent. Scheduled sync starts
+              disabled.
+            </p>
+            {action.error && (
+              <p role="alert" className="crm-error">
+                {action.error}
+              </p>
+            )}
+            <button className="crm-button" disabled={action.pending}>
+              {action.pending ? "Creating…" : "Create integration"}
+            </button>
+          </form>
+        </Dialog>
       </section>
-
-      {/* CONFIGURATION MODAL */}
-
-      {selected && (
-        <ConfigurationModal
-          integration={selected}
-          onChange={
-            updateIntegration
-          }
-          onClose={() =>
-            setSelected(null)
-          }
-        />
-      )}
-
     </main>
   );
 }
-
 function IntegrationCard({
   integration,
-  onConnect,
-  onDisconnect,
-  onSync,
-  onConfigure,
+  writable,
+  tenantId,
 }: {
   integration: Integration;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  onSync: () => void;
-  onConfigure: () => void;
+  writable: boolean;
+  tenantId: string;
 }) {
-  const Icon =
-    getIcon(integration.id);
-
-  const connected =
-    integration.status ===
-    "Connected";
-
+  const status = useResource<IntegrationStatus>(
+    `/operations/integrations/${integration.id}/status`,
+  );
+  const action = useAction();
+  const [job, setJob] = useState("");
+  const [logs, setLogs] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [cursor, setCursor] = useState("");
+  const key = useRef<{ cursor: string; value: string } | null>(null);
+  const { confirm } = useConfirm();
+  const current = status.data;
+  async function authorize() {
+    await action.run(async () => {
+      const result = await operations.authorize(integration.id);
+      const url = new URL(result.authorization_url);
+      if (
+        !(
+          url.origin === window.location.origin &&
+          url.pathname === "/integrations/callback"
+        ) &&
+        (url.protocol !== "https:" ||
+          !["accounts.google.com", "login.microsoftonline.com"].includes(
+            url.hostname,
+          ))
+      )
+        throw new Error("Unexpected provider authorization destination.");
+      sessionStorage.setItem(
+        "globexa-oauth-correlation",
+        JSON.stringify({
+          integrationId: integration.id,
+          tenantId,
+          startedAt: Date.now(),
+        }),
+      );
+      window.location.assign(url.toString());
+      return result;
+    });
+  }
+  async function sync() {
+    if (key.current?.cursor !== cursor)
+      key.current = { cursor, value: crypto.randomUUID() };
+    const requestKey = key.current.value;
+    await action.run(async () => {
+      const result = await operations.sync(
+        integration.id,
+        requestKey,
+        cursor || undefined,
+      );
+      setJob(result.id);
+      key.current = null;
+      return result;
+    });
+  }
   return (
-    <div className="card p-5">
-
-      <div className="flex items-start justify-between">
-
-        <div className="flex gap-4">
-
-          <div className="rounded-xl bg-[var(--panel2)] p-3 text-[var(--cyan)]">
-            <Icon size={20} />
-          </div>
-
-          <div>
-            <h3 className="font-semibold">
-              {integration.name}
-            </h3>
-
-            <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--muted)]">
-              {integration.description}
+    <article className="card space-y-3 p-5">
+      <h3 className="text-lg font-semibold">{integration.name}</h3>
+      <ResourceState
+        loading={status.isLoading}
+        error={status.error}
+        onRetry={() => void status.refetch()}
+      >
+        {current && (
+          <>
+            <p className="text-sm">
+              Status: <strong>{current.status}</strong>
+              {current.status === "connected" && current.expired
+                ? " · Credentials expired; refresh or reconnect"
+                : ""}
             </p>
-          </div>
-
-        </div>
-
-        <StatusBadge
-          status={
-            integration.status
-          }
-        />
-
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-3">
-
-        <div className="rounded-lg bg-[var(--panel2)] p-3">
-
-          <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-            Account
-          </p>
-
-          <p className="mt-1 truncate text-xs">
-            {integration.account ||
-              "Not connected"}
-          </p>
-
-        </div>
-
-        <div className="rounded-lg bg-[var(--panel2)] p-3">
-
-          <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-            Last Sync
-          </p>
-
-          <p className="mt-1 text-xs">
-            {integration.lastSync}
-          </p>
-
-        </div>
-
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
-
-        {connected ? (
+            <p className="crm-muted">
+              Token expiry: {timestamp(current.expires_at)}
+            </p>
+            <p className="crm-muted">
+              Supported operations:{" "}
+              {current.capabilities.length
+                ? current.capabilities.join(", ").replaceAll("_", " ")
+                : "Not available"}
+            </p>
+          </>
+        )}
+      </ResourceState>
+      <p className="text-sm">
+        Last sync: {timestamp(integration.last_sync_at)} ·{" "}
+        {integration.last_sync_status || "No sync recorded"}
+      </p>
+      <p className="crm-muted">
+        {integration.sync_enabled
+          ? `Scheduled sync every ${integration.sync_frequency_minutes} minutes`
+          : "Scheduled sync disabled"}{" "}
+        · {integration.records_synced} records synced
+      </p>
+      <div className="crm-actions">
+        <button className="crm-secondary" onClick={() => void status.refetch()}>
+          Check status
+        </button>
+        <button className="crm-secondary" onClick={() => setLogs(!logs)}>
+          {logs ? "Hide sync history" : "Sync history"}
+        </button>
+        {writable && current?.capabilities.includes("connect") && (
+          <button
+            className="crm-button"
+            disabled={action.pending}
+            onClick={() => void authorize()}
+          >
+            {current.status === "connected" ? "Reconnect" : "Authorize"}
+          </button>
+        )}
+        {writable && current?.status === "connected" && (
           <>
             <button
-              onClick={onSync}
-              className="flex items-center gap-2 rounded-lg bg-[var(--blue)] px-3 py-2 text-sm"
-            >
-              <RefreshCw size={15} />
-              Sync Now
-            </button>
-
-            <button
-              onClick={onConfigure}
-              className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-            >
-              <Settings2 size={15} />
-              Configure
-            </button>
-
-            <button
-              onClick={
-                onDisconnect
+              className="crm-secondary"
+              disabled={action.pending}
+              onClick={() =>
+                void action.run(async () => {
+                  const result = await operations.refresh(integration.id);
+                  setNotice("Backend confirmed credentials are valid.");
+                  return result;
+                })
               }
-              className="ml-auto rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted)]"
+            >
+              Refresh credentials
+            </button>
+            <button
+              className="crm-danger"
+              disabled={action.pending}
+              onClick={() =>
+                void (async () => {
+                  if (
+                    !(await confirm({
+                      title: "Disconnect integration?",
+                      message:
+                        "Stored credentials will be removed and scheduled sync disabled. Pending deliveries may fail.",
+                      confirmText: "Disconnect",
+                      tone: "danger",
+                    }))
+                  )
+                    return;
+                  await action.run(async () => {
+                    const result = await operations.disconnect(integration.id);
+                    setNotice(
+                      result.remote_revocation
+                        ? "Disconnected. Provider revocation confirmed."
+                        : "Disconnected locally. Provider account access may also need to be revoked in the provider settings.",
+                    );
+                    return result;
+                  });
+                })()
+              }
             >
               Disconnect
             </button>
           </>
-        ) : (
-          <button
-            onClick={onConnect}
-            className="flex items-center gap-2 rounded-lg bg-[var(--blue)] px-4 py-2 text-sm"
-          >
-            <Plug size={15} />
-            Connect
-          </button>
         )}
-
       </div>
-
-    </div>
-  );
-}
-
-function ConfigurationModal({
-  integration,
-  onChange,
-  onClose,
-}: {
-  integration: Integration;
-  onChange: (
-    updated: Integration
-  ) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-
-      <div className="card w-full max-w-xl p-6">
-
-        <div className="mb-6 flex items-start justify-between">
-
-          <div>
-            <p className="text-xs tracking-[2px] text-[var(--blue2)]">
-              INTEGRATION SETTINGS
-            </p>
-
-            <h2 className="mt-1 text-xl font-semibold">
-              {integration.name}
-            </h2>
-          </div>
-
-          <button
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-
-        </div>
-
-        <div className="space-y-4">
-
-          <div>
-            <label className="mb-2 block text-xs text-[var(--muted)]">
-              Connected Account
+      {writable &&
+        current?.status === "connected" &&
+        current.capabilities.includes("sync") && (
+          <div className="crm-form">
+            <label className="crm-field">
+              Next-page cursor (optional)
+              <input
+                className="crm-input"
+                value={cursor}
+                maxLength={1000}
+                onChange={(e) => setCursor(e.target.value)}
+              />
             </label>
-
-            <input
-              value={
-                integration.account
-              }
-              onChange={(e) =>
-                onChange({
-                  ...integration,
-                  account:
-                    e.target.value,
-                })
-              }
-              placeholder="Account name"
-              className="card w-full px-4 py-3 text-sm outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-xs text-[var(--muted)]">
-              Sync Direction
-            </label>
-
-            <select
-              value={
-                integration.syncMode
-              }
-              onChange={(e) =>
-                onChange({
-                  ...integration,
-                  syncMode:
-                    e.target.value,
-                })
-              }
-              className="card w-full px-4 py-3 text-sm"
+            <button
+              className="crm-secondary"
+              disabled={action.pending}
+              onClick={() => void sync()}
             >
-              <option>
-                Two-way
-              </option>
-
-              <option>
-                Inbound
-              </option>
-
-              <option>
-                Outbound
-              </option>
-            </select>
+              Queue sync
+            </button>
+            <p className="crm-muted">
+              Sync processes a bounded page. A continuation cursor is shown in
+              the completed job result when more messages remain.
+            </p>
           </div>
-
-          <label className="flex items-center justify-between rounded-xl border border-[var(--border)] p-4">
-
-            <div>
-              <p className="text-sm font-medium">
-                Automatic Sync
-              </p>
-
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Automatically keep CRM data synchronized.
-              </p>
-            </div>
-
-            <input
-              type="checkbox"
-              checked={
-                integration.autoSync
-              }
-              onChange={(e) =>
-                onChange({
-                  ...integration,
-                  autoSync:
-                    e.target.checked,
-                })
-              }
-            />
-
-          </label>
-
-        </div>
-
-        <div className="mt-6 flex justify-end">
-
-          <button
-            onClick={onClose}
-            className="rounded-lg bg-[var(--blue)] px-5 py-2.5 text-sm"
-          >
-            Save Settings
-          </button>
-
-        </div>
-
-      </div>
-
-    </div>
+        )}
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
+      {action.error && (
+        <p role="alert" className="crm-error">
+          {action.error}
+          {action.error.includes("unavailable")
+            ? " Provider application configuration may be required."
+            : ""}
+        </p>
+      )}
+      {job && (
+        <JobStatus jobId={job} onComplete={() => void status.refetch()} />
+      )}
+      {logs && <SyncHistory id={integration.id} />}
+    </article>
   );
 }
-
-function StatusBadge({
-  status,
-}: {
-  status: Status;
-}) {
-  if (status === "Connected") {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-green-500/10 px-3 py-1 text-xs text-green-400">
-        <CheckCircle2 size={12} />
-        Connected
-      </span>
-    );
-  }
-
-  if (status === "Attention") {
-    return (
-      <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-400">
-        Attention
-      </span>
-    );
-  }
-
+function SyncHistory({ id }: { id: string }) {
+  const [page, setPage] = useState(1);
+  const list = useResource<LegacyPage<SyncLog>>(
+    `/integrations/${id}/sync-logs?page=${page}&page_size=10`,
+  );
   return (
-    <span className="rounded-full bg-[var(--panel2)] px-3 py-1 text-xs text-[var(--muted)]">
-      Disconnected
-    </span>
+    <section>
+      <h4 className="font-semibold">Sync history</h4>
+      <ResourceState
+        loading={list.isLoading}
+        error={list.error}
+        empty={list.data?.items.length === 0}
+        onRetry={() => void list.refetch()}
+      >
+        <ul className="mt-2 space-y-2 text-sm">
+          {list.data?.items.map((log) => (
+            <li key={log.id} className="rounded-lg bg-[var(--panel2)] p-3">
+              <strong>{log.status}</strong> · {timestamp(log.started_at)}
+              <p>
+                Processed: {log.records_processed ?? "Not supplied"} · Created:{" "}
+                {log.records_created ?? "Not supplied"} · Updated:{" "}
+                {log.records_updated ?? "Not supplied"}
+              </p>
+              {log.error_message && <p role="alert">{log.error_message}</p>}
+            </li>
+          ))}
+        </ul>
+      </ResourceState>
+      <nav className="crm-actions mt-2" aria-label="Sync history pages">
+        <button
+          className="crm-secondary"
+          disabled={page === 1}
+          onClick={() => setPage(page - 1)}
+        >
+          Previous syncs
+        </button>
+        <button
+          className="crm-secondary"
+          disabled={!list.data || page >= list.data.total_pages}
+          onClick={() => setPage(page + 1)}
+        >
+          Next syncs
+        </button>
+      </nav>
+    </section>
   );
-}
-
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="card p-5">
-
-      <p className="text-xs text-[var(--muted)]">
-        {label}
-      </p>
-
-      <b className="mt-2 block text-2xl">
-        {value}
-      </b>
-
-    </div>
-  );
-}
-
-function getIcon(id: string) {
-  switch (id) {
-    case "facebook-leads":
-      return Globe;
-
-    case "instagram":
-      return MessageSquare;
-
-    case "whatsapp":
-      return MessageSquare;
-
-    case "meta-ads":
-      return Megaphone;
-
-    case "gmail":
-      return Mail;
-
-    case "calendar":
-      return Calendar;
-
-    case "drive":
-      return HardDrive;
-
-    case "sheets":
-      return Table2;
-
-    case "telegram":
-      return Send;
-
-    case "slack":
-      return MessageSquare;
-
-    case "linkedin":
-      return Globe;
-
-    case "apollo":
-      return Database;
-
-    case "webhook":
-      return Webhook;
-
-    default:
-      return Plug;
-  }
 }
