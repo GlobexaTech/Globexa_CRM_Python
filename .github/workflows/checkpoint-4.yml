@@ -11,6 +11,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -e -o pipefail {0}
     services:
       postgres:
         image: postgres:16-alpine
