@@ -360,7 +360,7 @@ async def get_current_user_optional(
 
 async def get_current_user(
     request: Request,
-    authorization: str = Header(None),
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> tuple[User, Membership]:
     """Get current user from token (required - raises 401 if invalid)."""
@@ -466,6 +466,32 @@ def require_min_role(min_role: RoleEnum):
         return current_user
 
     return role_checker
+
+
+async def validate_x_tenant_id(
+    request: Request,
+    current_user: tuple[User, Membership] = Depends(get_current_active_user),
+) -> tuple[User, Membership]:
+    """
+    Validate that X-Tenant-ID header matches the authenticated user's tenant.
+    This runs AFTER get_current_user so request.state.user_tenant_id is available.
+    """
+    tenant_id_header = request.headers.get("X-Tenant-ID")
+    if tenant_id_header:
+        try:
+            tenant_id = UUID(tenant_id_header)
+            user, membership = current_user
+            if str(membership.tenant_id) != str(tenant_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="X-Tenant-ID does not match authenticated user's tenant",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Tenant-ID format",
+            )
+    return current_user
 
 
 # Common permission dependencies
