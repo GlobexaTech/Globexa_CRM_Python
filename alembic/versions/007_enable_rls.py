@@ -7,96 +7,82 @@ Create Date: 2026-09-15
 from alembic import op
 import sqlalchemy as sa
 
-# revision identifiers, used by Alembic.
-revision = '007_enable_rls'
-down_revision = '006_add_missing_enum_labels'
+revision = "007_enable_rls"
+down_revision = "006_add_missing_enum_labels"
 branch_labels = None
 depends_on = None
 
+_GLOBAL_TABLES = {"users", "tenants", "memberships"}
 
-def _get_tenant_tables(connection) -> list:
-    """Discover tables with tenant_id columns from the application metadata.
-    
-    Excludes global system tables that should not have RLS policies.
-    """
-    # Reflect the current schema to find all tables with tenant_id columns
+
+def _get_tenant_tables(connection) -> list[str]:
+    """Discover existing application tables that contain tenant_id."""
     metadata = sa.MetaData()
-    metadata.reflect(bind=connection, only=())
-    
-    tenant_tables = []
-    for table_name, table in metadata.tables.items():
-        # Skip global system tables
-        if table_name in ('users', 'tenants', 'memberships'):
-            continue
-        # Check if table has a tenant_id column
-        if any(c.name == 'tenant_id' for c in table.columns):
-            tenant_tables.append(table_name)
-    
-    return sorted(tenant_tables)
+    # Reflect the actual current schema. ``only=()`` reflects nothing and
+    # therefore silently produced an empty RLS migration on fresh installs.
+    metadata.reflect(bind=connection)
+    return sorted(
+        table.name
+        for table in metadata.tables.values()
+        if table.name not in _GLOBAL_TABLES
+        and any(column.name == "tenant_id" for column in table.columns)
+    )
+
+
+def _quote_identifier(connection, identifier: str) -> str:
+    return connection.dialect.identifier_preparer.quote(identifier)
 
 
 def upgrade() -> None:
-    # Discover tables with tenant_id columns
     connection = op.get_bind()
     tenant_tables = _get_tenant_tables(connection)
-    
-    # First, create a helper function to get the current tenant (for policies)
-    op.execute("""CREATE OR REPLACE FUNCTION current_tenant_id()
-    RETURNS uuid
-    LANGUAGE plpgsql
-    AS $$
-    DECLARE
-        tid uuid := '00000000-0000-0000-0000-000000000000'::uuid;
-    BEGIN
+
+    op.execute("""
+        CREATE OR REPLACE FUNCTION current_tenant_id()
+        RETURNS uuid
+        LANGUAGE plpgsql
+        STABLE
+        SET search_path = pg_catalog
+        AS $$
+        DECLARE
+            raw_tid text;
         BEGIN
-            tid := current_setting('app.current_tenant_id', true)::uuid;
-        EXCEPTION WHEN others THEN
-            tid := '00000000-0000-0000-0000-000000000000'::uuid;
+            raw_tid := current_setting('app.current_tenant_id', true);
+            IF raw_tid IS NULL OR raw_tid = '' THEN
+                RETURN NULL;
+            END IF;
+            BEGIN
+                RETURN raw_tid::uuid;
+            EXCEPTION WHEN invalid_text_representation THEN
+                RETURN NULL;
+            END;
         END;
-        RETURN tid;
-    END;
-    $$""")
-    
-    # Enable RLS on each table and create policies
+        $$
+    """)
+
     for table in tenant_tables:
-        # Enable RLS
-        op.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;')
-        
-        # Force RLS for table owners (so even table owners are subject to policies)
-        op.execute(f'ALTER TABLE {table} FORCE ROW LEVEL SECURITY;')
-        
-        # Create USING policy (for SELECT, UPDATE, DELETE)
+        qtable = _quote_identifier(connection, table)
+        isolation_policy = _quote_identifier(connection, f"{table}_tenant_isolation")
+        insert_policy = _quote_identifier(connection, f"{table}_tenant_insert")
+
+        op.execute(f"ALTER TABLE {qtable} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {qtable} FORCE ROW LEVEL SECURITY")
+        op.execute(f"DROP POLICY IF EXISTS {isolation_policy} ON {qtable}")
+        op.execute(f"DROP POLICY IF EXISTS {insert_policy} ON {qtable}")
         op.execute(f"""
-            CREATE POLICY {table}_tenant_isolation ON {table}
+            CREATE POLICY {isolation_policy} ON {qtable}
+            AS RESTRICTIVE FOR ALL TO PUBLIC
             USING (tenant_id = current_tenant_id())
-        """)
-        
-        # Create WITH CHECK policy (for INSERT, UPDATE)
-        op.execute(f"""
-            CREATE POLICY {table}_tenant_insert ON {table}
             WITH CHECK (tenant_id = current_tenant_id())
         """)
-    
-    # Log the number of tables protected
+
     op.execute(f"""
-        COMMENT ON FUNCTION current_tenant_id() IS 
-        'Returns current tenant ID from session setting for RLS policies. '
-        'Used for multi-tenant isolation in Globexa CRM. '
-        ' {len(tenant_tables)} tables protected.'
+        COMMENT ON FUNCTION current_tenant_id() IS
+        'Returns the transaction-local current tenant UUID for Globexa CRM RLS. {len(tenant_tables)} tables protected by migration 007.'
     """)
 
 
 def downgrade() -> None:
-    # Discover tables with tenant_id columns
-    connection = op.get_bind()
-    tenant_tables = _get_tenant_tables(connection)
-    
-    # Drop policies and disable RLS
-    for table in tenant_tables:
-        op.execute(f'DROP POLICY IF EXISTS {table}_tenant_isolation ON {table};')
-        op.execute(f'DROP POLICY IF EXISTS {table}_tenant_insert ON {table};')
-        op.execute(f'ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;')
-        op.execute(f'ALTER TABLE {table} DISABLE ROW LEVEL SECURITY;')
-    
-    # Drop helper function
-    op.execute('DROP FUNCTION IF EXISTS current_tenant_id();')
+    # Security migration is intentionally not reversible: silently disabling
+    # RLS during a downgrade could expose tenant data.
+    pass
