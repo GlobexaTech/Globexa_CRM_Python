@@ -1,6 +1,7 @@
 """
 Tenant middleware for Globexa CRM.
 Resolves tenant from request and enforces tenant isolation.
+Integrates with RLS (Row-Level Security) for database-level tenant isolation.
 """
 from typing import Optional
 from uuid import UUID
@@ -14,6 +15,7 @@ from starlette.responses import JSONResponse
 from app.core.database import AsyncSessionLocal
 from app.core.security import decode_token
 from app.models import Membership, Tenant, User
+from app.core.tenant_context import tenant_context, current_user
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -21,10 +23,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
     Resolve the request tenant and enforce tenant context before route execution.
 
     Tenant resolution order:
-    1. X-Tenant-ID header
-    2. Subdomain
-    3. Custom domain
-    4. Default tenant (development only)
+    1. X-Tenant-ID header (for API calls)
+    2. Subdomain (tenant.example.com)
+    3. Custom domain (configured per tenant)
+    4. Default tenant (for development)
     """
 
     EXCLUDED_PATHS = {
@@ -48,18 +50,21 @@ class TenantMiddleware(BaseHTTPMiddleware):
         self.default_tenant_slug = default_tenant_slug
 
     async def dispatch(self, request: Request, call_next):
-        from app.core.tenant_context import tenant_context, current_user
         if request.url.path in self.EXCLUDED_PATHS or request.url.path.startswith("/api/v1/hooks/"):
             return await call_next(request)
+        
         authorization = request.headers.get("Authorization", "")
         payload = decode_token(authorization.removeprefix("Bearer ")) if authorization.startswith("Bearer ") else None
+        
         if not payload or payload.get("type") != "access":
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        
         try:
             actor = UUID(str(payload["sub"]))
             token_tenant = UUID(str(payload["tenant_id"]))
         except (ValueError, KeyError, TypeError):
             return JSONResponse(status_code=401, content={"detail": "Invalid authentication context"})
+        
         identity_token = current_user.set(actor)
         try:
             tenant = await self._resolve_tenant(request)
@@ -67,11 +72,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=400, content={"detail": "Tenant not found"})
             if not tenant.is_active or tenant.id != token_tenant:
                 return JSONResponse(status_code=403, content={"detail": "Tenant context mismatch"})
+            
             error = await self._validate_tenant_context(request, tenant)
             if error:
                 return JSONResponse(status_code=403, content={"detail": error})
+            
             request.state.tenant = tenant
             request.state.tenant_id = tenant.id
+            
             with tenant_context(tenant.id, actor):
                 return await call_next(request)
         finally:
@@ -89,12 +97,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         authorization = request.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
-            # Authentication dependencies remain responsible for missing credentials.
             return None
 
         payload = decode_token(authorization.removeprefix("Bearer ").strip())
         if not payload or payload.get("type") != "access":
-            # Authentication dependencies return the canonical 401 for bad tokens.
             return None
 
         token_tenant_id = payload.get("tenant_id")
@@ -137,6 +143,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
         except ValueError:
             return None
 
+    async def _has_membership(self, user_id: UUID, tenant_id: UUID) -> bool:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Membership.id).join(User, User.id == Membership.user_id).where(
+                    User.is_active.is_(True),
+                    Membership.user_id == user_id,
+                    Membership.tenant_id == tenant_id,
+                )
+            )
+            return result.scalar_one_or_none() is not None
+
     async def _resolve_tenant(self, request: Request) -> Optional[Tenant]:
         """Resolve tenant from header, host, or development fallback."""
         tenant_id_header = request.headers.get("X-Tenant-ID")
@@ -167,17 +184,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
             return await self._get_tenant_by_slug(self.default_tenant_slug)
 
         return None
-
-    async def _has_membership(self, user_id: UUID, tenant_id: UUID) -> bool:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Membership.id).join(User, User.id == Membership.user_id).where(
-                    User.is_active.is_(True),
-                    Membership.user_id == user_id,
-                    Membership.tenant_id == tenant_id,
-                )
-            )
-            return result.scalar_one_or_none() is not None
 
     async def _get_tenant_by_id(self, tenant_id: UUID) -> Optional[Tenant]:
         async with AsyncSessionLocal() as db:

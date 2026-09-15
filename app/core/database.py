@@ -16,9 +16,11 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
+from sqlalchemy import event
+from sqlalchemy import create_engine as create_sync_engine
 
 from app.core.config import get_settings
-
+from app.core.rls import setup_rls_event_listeners
 
 E = TypeVar("E", bound=PyEnum)
 
@@ -69,6 +71,15 @@ def create_engine() -> AsyncEngine:
 
 
 engine = create_engine()
+
+# Create synchronous engine for RLS event listeners and Alembic
+sync_engine = create_sync_engine(
+    settings.database.sync_url,
+    poolclass=NullPool,
+)
+
+# Set up RLS event listeners for automatic tenant context
+setup_rls_event_listeners(sync_engine)
 
 # Async session factory
 AsyncSessionLocal = async_sessionmaker(
@@ -124,12 +135,22 @@ async def close_db() -> None:
 # For Alembic migrations
 def get_sync_engine():
     """Get synchronous engine for Alembic."""
-    from sqlalchemy import create_engine as create_sync_engine
     return create_sync_engine(
         settings.database.sync_url,
         poolclass=NullPool,
     )
+
 # Install security and outbox lifecycle listeners for all Session instances.
 from app.core import tenant_context  # noqa: F401,E402
 
 from app.core import events  # noqa: F401,E402
+
+# Export RLS utilities
+from app.core.rls import (
+    set_rls_context,
+    clear_rls_context,
+    get_current_tenant,
+    get_current_user_id,
+    is_admin,
+    rls_session_context,
+)
