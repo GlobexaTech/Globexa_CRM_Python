@@ -23,7 +23,7 @@ PUBLIC_FILES = {
 AUDIT_SCREENSHOT = re.compile(
     r"(?:dashboard|leads|contacts|companies|pipeline|tasks|conversations|campaigns|"
     r"automations|integrations|ai-agents|analytics|search|settings|help|customers|"
-    r"lead-drawer|workforce-ai-workforce|workforce-supervisor|workforce-approvals)-(?:1440|1280|768|390)\.png$"
+    r"lead-drawer|workforce-ai-workforce|workforce-supervisor|workforce-approvals|automation-advanced)-(?:1440|1280|768|390)\.png$"
 )
 SECRET_NAME = re.compile(r"(?:KEY|SECRET|PASSWORD|TOKEN)$", re.IGNORECASE)
 JWT = re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])")
@@ -82,7 +82,7 @@ def audit_screenshot(relative):
     # login/private form even when their spec name is not auth.spec.ts.
     return (
         len(relative.parts) == 2
-        and (relative.parts[0].startswith("accessibility-") or relative.parts[0].startswith("workforce-workforce-routes-"))
+        and (relative.parts[0].startswith("accessibility-") or relative.parts[0].startswith("workforce-workforce-routes-") or relative.parts[0].startswith("automation-advanced-workflow-screen-accessibility-"))
         and bool(AUDIT_SCREENSHOT.fullmatch(relative.name))
     )
 

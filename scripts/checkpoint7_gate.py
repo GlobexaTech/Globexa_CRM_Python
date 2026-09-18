@@ -17,8 +17,8 @@ except ImportError:  # Direct script execution from the CI checkout.
     from triage_history_secrets import triage
 
 ROOT = Path(__file__).resolve().parents[1]
-MIN_BACKEND = 380
-MIN_BROWSER = 72
+MIN_BACKEND = 393
+MIN_BROWSER = 73
 MIN_UNIT = 34
 REQUIRED_BACKEND_MODULES = {
     "tests.test_checkpoint56_ai_edges", "tests.test_checkpoint56_auth", "tests.test_checkpoint56_config",

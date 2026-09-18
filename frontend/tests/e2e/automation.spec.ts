@@ -138,6 +138,51 @@ test("advanced automation API rejects viewer mutations and foreign tenant access
   }
 });
 
+test("visual delay edits remain synchronized with advanced arguments", async ({
+  page,
+  context,
+}) => {
+  await apiLogin(context);
+  await page.goto("/automations/advanced");
+  await page
+    .getByRole("button", { name: "New advanced workflow", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "New step type", exact: true })
+    .selectOption("delay");
+  await page.getByRole("button", { name: "Add step", exact: true }).click();
+  const delay = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: /2\. delay/ }) });
+  await delay.getByLabel("Wait minutes", { exact: false }).fill("9");
+  await delay
+    .getByText("Failure handling and advanced arguments", { exact: true })
+    .click();
+  await expect(
+    delay.getByRole("textbox", { name: "Arguments", exact: true }),
+  ).toHaveValue(/"minutes": 9/);
+  await delay
+    .getByRole("textbox", { name: "Arguments", exact: true })
+    .fill('{"minutes":12}');
+  await expect(delay.getByLabel("Wait minutes", { exact: false })).toHaveValue(
+    "12",
+  );
+  const raw = delay.getByRole("textbox", { name: "Arguments", exact: true });
+  await raw.fill("{");
+  await expect
+    .poll(() =>
+      raw.evaluate((el) => (el as HTMLTextAreaElement).validity.valid),
+    )
+    .toBe(false);
+  await delay.getByLabel("Wait minutes", { exact: false }).fill("15");
+  await expect(raw).toHaveValue(/"minutes": 15/);
+  await expect
+    .poll(() =>
+      raw.evaluate((el) => (el as HTMLTextAreaElement).validity.valid),
+    )
+    .toBe(true);
+});
+
 for (const width of [1440, 1280, 768, 390]) {
   test(`advanced workflow screen accessibility at ${width}`, async ({
     page,

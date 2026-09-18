@@ -5,7 +5,7 @@ Checkpoint 5/6 CI run `35387774618` succeeded and its downloaded exact-SHA artif
 
 Branch: `checkpoint-7-advanced-automation-intelligence`.
 
-## In progress
+## Historical foundation stage
 
 - Persistent automation/version/trigger/condition/action/execution/step/schedule/variable/credential-reference models, plus policy and notification records.
 - Strict bounded declarative graph schema, dictionary-only conditions and templates, IANA timezone schedules.
@@ -21,7 +21,7 @@ The user requested publishing all current work before reworking Checkpoint 7. Th
 - API, frontend, full regression/security verification, clean database migration, launch audit and exact-commit CI certification remain outstanding.
 - The implementation list below remains an acceptance checklist, not a completion claim.
 
-## Required before completion
+## Original acceptance checklist
 
 1. Frozen new migration, FORCE RLS/compound tenant keys/immutable version enforcement; clean-database verification.
 2. Publish validator, transactional event routing, durable single-step workers, waits/retries/dead letters/loop limits/quotas/schedules.
@@ -40,3 +40,10 @@ Snapshot `26d97300df98636d21843fe01a06ce61a54367f9` was pushed and remote-verifi
 Added the advanced automation API, BFF route, visual workflow editor, version controls, timeline, analytics and model-assisted simulation. Fixed permission-revocation termination, normalized approval payload binding, provider rate grouping, inactive-schedule starvation, queued-message business-hour fencing, chain propagation and graph output dependencies. Added three complete persisted provider/model contract flows plus concurrent admission and uncertain-outcome tests.
 
 Intermediate evidence: 363 full backend tests passed, then 51 expanded focused tests passed; 34 frontend units passed; lint/typecheck/build passed; new persisted browser flow, tenant/RBAC boundary and four viewport accessibility checks passed. Final expanded regression, source/security scans and exact-SHA CI remain required. The report deliberately stays IN PROGRESS until final certification.
+
+
+## Release audit and acceptance handoff
+
+The verified implementation baseline `cdc3b752bb138febaa14e8e00a1cc3c8715a21ef` passed GitHub run `35395918533`; the downloaded certificate confirms 389 backend, 34 unit and 72 browser tests, migration/RLS/Docker/scans and zero failures/errors/skips. Later audit changes correct uncertain-send continuation, editor synchronization/native validity and failed-attempt accounting, and add their regressions plus business-hour and chain publication tests. Local full backend passed 392 tests before the last attempt regression; all seven advanced browser tests passed. The final gate now requires 393 backend, 34 unit and 73 browser tests.
+
+Earlier “in progress” statements above describe their historical snapshots. Use CHECKPOINT_7_REPORT.md and the current revision's own CHECKPOINT_7_GATE.txt artifact for acceptance and provider limits. No production or live-provider certification was performed.

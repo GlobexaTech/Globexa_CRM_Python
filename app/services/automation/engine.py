@@ -371,7 +371,9 @@ async def run_operation(db, job, gateway=None):
                 elif child.status == "completed":
                     result = {**(child.result or {}), "job_id": str(child.id), "status": "sent"}
                 else:
-                    raise HTTPException(409, "delivery_" + child.status)
+                    failure = HTTPException(409, "delivery_" + child.status)
+                    failure.uncertain = child.status == "unknown"
+                    raise failure
             elif node.type == "condition":
                 matched = evaluate(node.condition, context, context.get("before"))
                 result = {"matched": matched}
@@ -546,8 +548,15 @@ async def run_operation(db, job, gateway=None):
                     )
                 await db.refresh(row, with_for_update=True)
                 from app.models import AIUsageLog
-                row.ai_calls = await db.scalar(select(func.count()).select_from(AIUsageLog).where(
-                    AIUsageLog.tenant_id == row.tenant_id, AIUsageLog.automation_execution_id == row.id))
+
+                row.ai_calls = await db.scalar(
+                    select(func.count())
+                    .select_from(AIUsageLog)
+                    .where(
+                        AIUsageLog.tenant_id == row.tenant_id,
+                        AIUsageLog.automation_execution_id == row.id,
+                    )
+                )
                 if row.state in TERMINAL or row.state == "PAUSED":
                     # Preserve actual external outcome even if cancellation arrived in flight.
                     step.result, step.state, step.completed_at = result, "COMPLETED", now()
@@ -556,8 +565,15 @@ async def run_operation(db, job, gateway=None):
             except Exception as exc:
                 await db.refresh(row, with_for_update=True)
                 from app.models import AIUsageLog
-                row.ai_calls = await db.scalar(select(func.count()).select_from(AIUsageLog).where(
-                    AIUsageLog.tenant_id == row.tenant_id, AIUsageLog.automation_execution_id == row.id))
+
+                row.ai_calls = await db.scalar(
+                    select(func.count())
+                    .select_from(AIUsageLog)
+                    .where(
+                        AIUsageLog.tenant_id == row.tenant_id,
+                        AIUsageLog.automation_execution_id == row.id,
+                    )
+                )
                 await record_failure(db, row, step, node, exc, next_node, fallback)
     except (HTTPException, ValueError, KeyError, TypeError, RuntimeError) as exc:
         await db.refresh(row)
@@ -582,6 +598,8 @@ async def complete_step(db, row, step, result, next_node):
         now(),
         None,
     )
+    # Pure evaluation nodes have no external claim, but still performed one attempt.
+    step.attempts = max(step.attempts, step.retry_count + 1)
     row.output = {**row.output, step.node_key: step.result}
     row.step_count += 1
     if step.approval_id:
@@ -620,6 +638,8 @@ async def record_failure(db, row, step, node, exc, next_node, fallback):
         code = exc.code
     if getattr(exc, "automation_code", None):
         code = exc.automation_code
+    # An internal action savepoint may have rolled back its attempt increment.
+    step.attempts = max(step.attempts, step.retry_count + 1)
     step.error_code, step.state = code, "FAILED"
     audit(
         db, row.tenant_id, row.actor_id, "automation.step.failed", "automation_step", step.id, False

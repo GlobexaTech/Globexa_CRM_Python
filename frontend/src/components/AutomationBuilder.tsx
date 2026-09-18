@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Automation,
   AutomationNode,
@@ -586,19 +586,39 @@ function JsonField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const [text, setText] = useState(JSON.stringify(value, null, 2));
+  const field = useRef<HTMLTextAreaElement>(null);
+  const serialized = JSON.stringify(value);
+  const [draft, setDraft] = useState({
+    source: serialized,
+    text: JSON.stringify(value, null, 2),
+  });
+  useEffect(() => {
+    let error = "";
+    try {
+      JSON.parse(draft.text);
+    } catch {
+      error = "Enter valid JSON before saving.";
+    }
+    field.current?.setCustomValidity(error);
+  }, [draft.text]);
+  if (draft.source !== serialized) {
+    setDraft({ source: serialized, text: JSON.stringify(value, null, 2) });
+  }
   return (
     <textarea
       className="crm-input font-mono"
       rows={5}
-      value={text}
+      ref={field}
+      value={draft.text}
       onChange={(e) => {
         const next = e.target.value;
-        setText(next);
         try {
-          onChange(JSON.parse(next));
+          const parsed: unknown = JSON.parse(next);
+          setDraft({ source: JSON.stringify(parsed), text: next });
+          onChange(parsed);
           e.target.setCustomValidity("");
         } catch {
+          setDraft({ source: serialized, text: next });
           e.target.setCustomValidity("Enter valid JSON before saving.");
         }
       }}

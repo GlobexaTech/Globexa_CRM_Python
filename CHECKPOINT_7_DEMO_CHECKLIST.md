@@ -15,4 +15,4 @@ Use an isolated test tenant and the restricted runtime role. Existing fixture sc
 
 Automated evidence: `tests/test_checkpoint7_engine.py` covers product flows and simulation; `tests/test_checkpoint7_security.py` covers hostile/failure boundaries; `tests/test_checkpoint7_expressions.py` covers conditions, schedules and graph safety; `frontend/tests/e2e/automation.spec.ts` covers persisted browser controls, tenant/RBAC boundaries and four viewports. The dedicated GitHub workflow also runs every prior backend/frontend test, clean PostgreSQL migrations, Docker and security scans.
 
-Acceptance requires the exact pushed SHA's `CHECKPOINT_7_GATE.txt` artifact. The work log and report explicitly identify pending verification until that artifact exists.
+Acceptance requires the exact pushed SHA's `CHECKPOINT_7_GATE.txt` artifact. The report identifies the verified baseline; each subsequent revision requires its own artifact before acceptance.

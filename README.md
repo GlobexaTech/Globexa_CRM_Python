@@ -2,6 +2,8 @@
 
 Multi-tenant AI-powered Sales CRM built with FastAPI, SQLAlchemy, Celery, and Next.js.
 
+Checkpoint 7 adds versioned advanced workflows, structured AI decisions, exact-step human approvals, persistent waits, timezone schedules, usage limits and CRM intelligence. Open `/automations/advanced` in the frontend. See the [Checkpoint 7 report](CHECKPOINT_7_REPORT.md), [architecture](AUTOMATION_ARCHITECTURE.md), [security and operating controls](AUTOMATION_SECURITY.md), [traceability](CHECKPOINT_7_TRACEABILITY.md) and [demo checklist](CHECKPOINT_7_DEMO_CHECKLIST.md). Release acceptance requires the exact revision's Checkpoint 7 CI artifact.
+
 Checkpoint 5 + 6 adds provider operations, six controlled AI agents, Supervisor, independent approvals, retained memory, and security hardening. Start with the [implementation report](CHECKPOINT_5_6_REPORT.md), [requirement traceability](CHECKPOINT_5_6_TRACEABILITY.md), [provider capability matrix](docs/checkpoint56/PROVIDER_CONTRACTS.md), and [frontend setup](frontend/README.md). Live provider certification requires credentials and is separate from the automated implementation gate. The [Checkpoint 4 report](CHECKPOINT_4_REPORT.md) records the preceding UI integration.
 
 ## Features
