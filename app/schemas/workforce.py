@@ -57,6 +57,9 @@ class ExecutionDetail(ExecutionResponse):
 
 
 class ApprovalResponse(Strict):
+    automation_execution_id: UUID | None = None
+    automation_version_id: UUID | None = None
+    automation_step_id: UUID | None = None
     id: UUID
     agent_name: str
     requesting_user_id: UUID | None

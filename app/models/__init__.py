@@ -296,6 +296,8 @@ class AIUsageLog(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tool_actions: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
     execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("agent_executions.id"), nullable=True, index=True)
+    automation_execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("automation_executions.id"), nullable=True)
+    automation_step_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("automation_step_executions.id"), nullable=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
@@ -1897,3 +1899,5 @@ from app.models.foundation import (OAuthToken, DomainEvent, EventDelivery, Webho
 Webhook = WebhookEndpoint
 from app.models.operations import (Participant, AnalyticsEvent, OperationJob, AIInsight,
                                    OAuthSession, WorkflowRevision)
+
+from app.models.automation import (Automation, AutomationVersion, AutomationTrigger, AutomationCondition, AutomationAction, AutomationExecution, AutomationStepExecution, AutomationSchedule, AutomationVariable, AutomationCredentialReference, AutomationPolicy, AutomationNotification)

@@ -190,6 +190,9 @@ class AgentMemory(TenantEntity, Base):
 
 class ApprovalRequest(TenantEntity, Base):
     __tablename__ = "approval_requests"
+    automation_execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("automation_executions.id"))
+    automation_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("automation_versions.id"))
+    automation_step_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("automation_step_executions.id"))
     agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
     requesting_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))

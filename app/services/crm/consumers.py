@@ -168,6 +168,7 @@ class CRMSubscriber:
 
 def install_subscribers():
     from app.services.ai.agent import WorkforceSubscriber
-    for consumer in (AnalyticsSubscriber(), CRMSubscriber(), WorkforceSubscriber()):
+    from app.services.automation.engine import AutomationSubscriber
+    for consumer in (AnalyticsSubscriber(), CRMSubscriber(), WorkforceSubscriber(), AutomationSubscriber()):
         if consumer.name not in subscribers:
             register_subscriber(consumer)

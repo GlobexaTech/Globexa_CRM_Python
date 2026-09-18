@@ -25,6 +25,9 @@ def provision():
         db.exec_driver_sql(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {quote}")
         db.exec_driver_sql(f"REVOKE INSERT, UPDATE, DELETE ON plans, features, plan_features FROM {quote}")
         db.exec_driver_sql(f"REVOKE UPDATE, DELETE ON audit_logs FROM {quote}")
+        for table in ("automation_versions", "automation_triggers", "automation_conditions", "automation_actions", "automation_variables", "automation_credential_references"):
+            if db.scalar(text("SELECT to_regclass(:table)"), {"table": table}):
+                db.exec_driver_sql(f'REVOKE UPDATE, DELETE ON "{table}" FROM {quote}')
         for signature in ("auth_lookup_user(text)", "tenant_slug_exists(text)", "lookup_webhook(uuid)", "active_tenant_ids()"):
             db.exec_driver_sql(f"GRANT EXECUTE ON FUNCTION public.{signature} TO {quote}")
     engine.dispose()

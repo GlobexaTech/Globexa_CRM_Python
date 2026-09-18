@@ -60,6 +60,8 @@ async def schedule_due(db, tenant_id):
     from app.services.crm.common import serial_key
 
     await serial_key(db, tenant_id, "crm-scheduler")
+    from app.services.automation.engine import schedule_due as schedule_automations
+    await schedule_automations(db, tenant_id)
     from app.services.ai.memory import purge_expired
     await purge_expired(db, tenant_id)
     from app.services.crm.campaigns import transition, update_stats

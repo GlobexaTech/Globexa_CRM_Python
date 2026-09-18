@@ -31,6 +31,7 @@ JOB_PERMISSIONS = {
     "automation": "automation:write",
     "provider_webhook": "integrations:webhooks",
     "workforce": "ai:chat",
+    "advanced_automation": "automation:write",
     "workforce_approval": "ai:chat",
 }
 
@@ -73,6 +74,9 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
     from app.core.tenant_context import bind_context
 
     await bind_context(db, tenant_id, job.actor_id)
+    if job.kind == "advanced_automation":
+        from app.services.automation.engine import run_operation
+        return await run_operation(db, job, gateway=gateway)
     integration, token, adapter = None, None, None
     try:
         await authorize(db, tenant_id, job.actor_id, JOB_PERMISSIONS[job.kind])

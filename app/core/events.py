@@ -11,6 +11,8 @@ EVENT_TYPES = frozenset({"lead.created", "lead.updated", "contact.created", "con
     "deal.stage_changed", "task.created", "task.completed", "task.overdue", "note.created", "activity.created",
     "campaign.started", "campaign.completed", "message.received", "message.sent", "integration.synced",
     "ai.completed", "automation.completed", "conversation.created", "webhook.received"})
+EVENT_TYPES = EVENT_TYPES | frozenset({"lead.stage_changed", "deal.updated", "message.delivered", "message.failed", "form.submitted", "integration.connected", "integration.disconnected", "AI.score_changed"})
+automation_chain = ContextVar("automation_chain", default=None)
 event_depth = ContextVar("crm_event_depth", default=0)
 
 
@@ -38,7 +40,7 @@ def publish_event(db, *, tenant_id, event_type, aggregate_id, actor_id=None,
         raise ValueError("Unregistered domain event")
     item = DomainEvent(id=uuid4(), tenant_id=tenant_id, event_type=event_type,
                        aggregate_id=str(aggregate_id), actor_id=actor_id,
-                       payload={**(payload or {}), "_depth": event_depth.get()}, idempotency_key=idempotency_key or str(uuid4()))
+                       payload={**(payload or {}), "_depth": event_depth.get(), "_automation_chain": automation_chain.get()}, idempotency_key=idempotency_key or str(uuid4()))
     db.add(item)
     return item
 
@@ -136,14 +138,38 @@ def capture_changes(db, flush_context, instances):
         if isinstance(obj, Integration) and inspect(obj).attrs.last_sync_status.history.has_changes():
             if getattr(obj.last_sync_status, "value", obj.last_sync_status) == "completed":
                 name = "integration.synced"
-        if name and not deleted:
+        extra_names = []
+        if not new and not deleted:
+            if isinstance(obj, Lead):
+                if inspect(obj).attrs.status.history.has_changes(): extra_names.append("lead.stage_changed")
+                if inspect(obj).attrs.ai_score.history.has_changes(): extra_names.append("AI.score_changed")
+            if isinstance(obj, Deal): extra_names.append("deal.updated")
+            if isinstance(obj, Message) and inspect(obj).attrs.status.history.has_changes():
+                if obj.status in {"delivered", "failed"}: extra_names.append("message." + obj.status)
+            if isinstance(obj, Integration) and inspect(obj).attrs.status.history.has_changes():
+                if obj.status == "connected": extra_names.append("integration.connected")
+                elif obj.status == "disconnected": extra_names.append("integration.disconnected")
+        if (name or extra_names) and not deleted:
             payload = {}
             for field in ("contact_id", "company_id", "lead_id", "deal_id", "conversation_id", "stage_id", "status", "value", "ai_score", "source", "direction"):
                 value = getattr(obj, field, None)
                 if value is not None:
                     payload[field] = value if isinstance(value, (int, float, bool)) else str(getattr(value, "value", value))
-            publish_event(db, tenant_id=obj.tenant_id, event_type=name,
-                          aggregate_id=obj.id, actor_id=actor, payload=payload)
+            before = {}
+            kind = {Lead: "lead", Contact: "contact", Deal: "deal", Task: "task", Message: "message", Campaign: "campaign"}.get(type(obj))
+            if kind:
+                for field in ("status", "stage_id", "value", "ai_score", "owner_id", "title", "description", "email"):
+                    if hasattr(obj, field):
+                        history = inspect(obj).attrs[field].history
+                        if history.has_changes() and history.deleted:
+                            value = history.deleted[0]
+                            before[field] = value if isinstance(value, (int, float, bool)) or value is None else str(getattr(value, "value", value))
+                if "status" in before and kind == "lead": before["stage"] = before["status"]
+                if "ai_score" in before and kind == "lead": before["score"] = before["ai_score"]
+                payload["before"] = {kind: before}
+            for event_name in dict.fromkeys(([name] if name else []) + extra_names):
+                publish_event(db, tenant_id=obj.tenant_id, event_type=event_name,
+                              aggregate_id=obj.id, actor_id=actor, payload=payload)
         if type(obj) in audited:
             action = "created" if new else "deleted" if deleted else "updated"
             if not new and not deleted and type(obj) in {IntegrationCredential, OAuthToken}:

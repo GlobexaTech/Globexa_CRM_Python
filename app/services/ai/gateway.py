@@ -127,7 +127,7 @@ class AIGateway:
         self.providers, self.routes = providers, routes
 
     async def execute(
-        self, db, tenant_id, user_id, task, operation, *, execution_id=None, **kwargs
+        self, db, tenant_id, user_id, task, operation, *, execution_id=None, automation_execution_id=None, automation_step_id=None, **kwargs
     ):
         if operation not in {"generate", "chat", "embed"}:
             raise ValueError("Unknown AI operation")
@@ -171,6 +171,8 @@ class AIGateway:
                     else None
                 ),
                 execution_id=execution_id,
+                automation_execution_id=automation_execution_id,
+                automation_step_id=automation_step_id,
                 correlation_id=str(execution_id) if execution_id else None,
                 latency_ms=int((time.monotonic() - start) * 1000),
                 estimated_cost_usd=cost,

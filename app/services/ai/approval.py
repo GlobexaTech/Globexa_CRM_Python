@@ -19,7 +19,7 @@ def fingerprint(action):
 
 
 async def request_approval(
-    db, tenant_id, actor_id, agent_name, name, arguments, key, *, execution_id=None
+    db, tenant_id, actor_id, agent_name, name, arguments, key, *, execution_id=None, automation_context=None
 ):
     from app.services.ai.workforce_tools import (
         validate_arguments,
@@ -29,7 +29,13 @@ async def request_approval(
 
     await authorize(db, tenant_id, actor_id, "ai:chat")
     safe_data(arguments)
-    if name == "remember":
+    if name.startswith("automation:"):
+        from app.services.automation.actions import permitted, binding as automation_binding
+        if not automation_context:
+            raise HTTPException(422, "Automation approval requires execution context")
+        arguments = await permitted(db, tenant_id, actor_id, name.removeprefix("automation:"), arguments)
+        binding = await automation_binding(db, tenant_id, name.removeprefix("automation:"), arguments)
+    elif name == "remember":
         from app.schemas.workforce import MemoryInput
 
         arguments = MemoryInput.model_validate(arguments).model_dump(mode="json")
@@ -39,6 +45,8 @@ async def request_approval(
         await validate_ownership(db, tenant_id, actor_id, name, arguments)
         binding = await action_binding(db, tenant_id, name, arguments)
     action = {"name": name, "arguments": arguments, "binding": binding}
+    if automation_context:
+        action["automation"] = {key: str(value) for key, value in automation_context.items()}
     digest = fingerprint(action)
     await serial_key(db, tenant_id, "approval:" + key)
     existing = await db.scalar(
@@ -78,6 +86,7 @@ async def request_approval(
         action_hash=digest,
         idempotency_key=key,
         expires_at=now() + timedelta(hours=24),
+        **(automation_context or {}),
     )
     db.add(row)
     await db.flush()
@@ -100,7 +109,13 @@ async def decide(db, tenant_id, actor_id, approval_id, data):
         fingerprint(row.proposed_action), row.action_hash
     ):
         raise HTTPException(409, "Action changed; a new approval is required")
-    if data.decision == "approved" and row.action_type != "remember":
+    if row.automation_execution_id:
+        from app.services.automation.approvals import validate_context
+        await validate_context(db, row)
+    if data.decision == "approved" and row.action_type.startswith("automation:"):
+        from app.services.automation.approvals import validate_action
+        await validate_action(db, row, actor_id)
+    elif data.decision == "approved" and row.action_type != "remember":
         from app.services.ai.workforce_tools import validate_ownership, action_binding
 
         action = row.proposed_action
@@ -148,7 +163,14 @@ async def run_approval(db, job):
                 fingerprint(row.proposed_action), row.action_hash
             ):
                 raise HTTPException(409, "Approval integrity check failed")
-            if row.execution_result and row.execution_result.get("job_id"):
+            if row.action_type.startswith("automation:"):
+                from app.services.automation.approvals import validate_context, validate_action
+                await validate_context(db, row)
+                await validate_action(db, row, row.decided_by)
+                # The automation step owns execution and crash recovery. This job
+                # only grants the exact approval; it cannot perform the action twice.
+                row.execution_result = {"authorization_granted": True}
+            elif row.execution_result and row.execution_result.get("job_id"):
                 child = await owned(
                     db, OperationJob, job.tenant_id, UUID(row.execution_result["job_id"])
                 )
@@ -247,8 +269,13 @@ async def validate_approved_send(db, job, integration):
         return  # An explicitly requested human send uses the normal CRM permissions.
     row = await owned(db, ApprovalRequest, job.tenant_id, UUID(approval_id), True)
     await db.refresh(row)
+    automation = bool(row.automation_execution_id)
+    if automation:
+        from app.services.automation.approvals import validate_context, validate_action
+        await validate_context(db, row)
+        await validate_action(db, row, row.decided_by)
     if (
-        row.action_type != "send_email"
+        row.action_type not in ({"automation:send_email", "automation:send_whatsapp"} if automation else {"send_email"})
         or row.status != "approved"
         or row.expires_at <= now()
         or row.requesting_user_id != job.actor_id
