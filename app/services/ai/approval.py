@@ -12,6 +12,12 @@ from app.services.crm.common import authorize, owned, audit, serial_key, enqueue
 from app.services.ai.safety import safe_data
 
 
+class AutomationSendDeferred(Exception):
+    def __init__(self, resume_at):
+        self.resume_at = resume_at
+        super().__init__("Outside published automation business hours")
+
+
 def fingerprint(action):
     return hashlib.sha256(
         json.dumps(action, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -323,3 +329,10 @@ async def validate_approved_send(db, job, integration):
         or message.attachments not in (None, [])
     ):
         raise HTTPException(409, "Queued message differs from approved action")
+    if automation:
+        from app.models import AutomationVersion
+        from app.services.automation.scheduling import business_open, next_business_open
+        version = await owned(db, AutomationVersion, job.tenant_id, row.automation_version_id)
+        hours = version.definition.get("business_hours")
+        if not business_open(hours, now()):
+            raise AutomationSendDeferred(next_business_open(hours, now()))

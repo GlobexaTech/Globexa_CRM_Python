@@ -186,6 +186,8 @@ app.include_router(campaigns_router, prefix="/api/v1")
 app.include_router(integrations_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(workforce_router, prefix="/api/v1")
+from app.api.v1.automation import router as automation_router
+app.include_router(automation_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")

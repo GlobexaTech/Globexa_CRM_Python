@@ -67,6 +67,12 @@ async def ingest_lead(db, tenant_id, integration, item):
                                "review_required": match["status"] == "AMBIGUOUS"})
     db.add(lead)
     await db.flush()
+    if item.get("provider") in {"meta", "meta_lead_ads", "google_ads"}:
+        from app.core.events import publish_event
+        publish_event(db, tenant_id=tenant_id, actor_id=integration.created_by_id,
+                      event_type="form.submitted", aggregate_id=lead.id,
+                      payload={"integration_id": str(integration.id)},
+                      idempotency_key="form:" + key)
     return lead, True
 
 

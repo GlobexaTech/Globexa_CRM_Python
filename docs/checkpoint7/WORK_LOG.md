@@ -32,3 +32,11 @@ The user requested publishing all current work before reworking Checkpoint 7. Th
 7. Full repository launch audit, fix findings, security scans, deployment/runbook documentation, final exact-SHA GitHub CI.
 
 No Checkpoint 7 completion claim has been made. No live credentials or paid services activated. User requested pausing at 10% remaining Codex usage; initial check showed 58% remaining in the reported weekly window.
+
+## Rework after snapshot publication
+
+Snapshot `26d97300df98636d21843fe01a06ce61a54367f9` was pushed and remote-verified at the user's request. Source secret scan found zero leaks.
+
+Added the advanced automation API, BFF route, visual workflow editor, version controls, timeline, analytics and model-assisted simulation. Fixed permission-revocation termination, normalized approval payload binding, provider rate grouping, inactive-schedule starvation, queued-message business-hour fencing, chain propagation and graph output dependencies. Added three complete persisted provider/model contract flows plus concurrent admission and uncertain-outcome tests.
+
+Intermediate evidence: 363 full backend tests passed, then 51 expanded focused tests passed; 34 frontend units passed; lint/typecheck/build passed; new persisted browser flow, tenant/RBAC boundary and four viewport accessibility checks passed. Final expanded regression, source/security scans and exact-SHA CI remain required. The report deliberately stays IN PROGRESS until final certification.

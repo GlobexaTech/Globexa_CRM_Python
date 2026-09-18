@@ -133,6 +133,7 @@ class AIGateway:
             raise ValueError("Unknown AI operation")
         if db is None:
             raise ValueError("AI execution requires a usage ledger transaction")
+        retryable, retry_after = False, 0
         for route in self.routes:
             start = time.monotonic()
             result = None
@@ -143,6 +144,14 @@ class AIGateway:
                 )
             except (httpx.HTTPError, ValueError, RuntimeError) as exc:
                 error = type(exc).__name__
+                if isinstance(exc, httpx.HTTPStatusError):
+                    status = exc.response.status_code
+                    retryable = retryable or status in {429, 502, 503, 504}
+                    header = exc.response.headers.get("Retry-After", "0")
+                    if header.isdigit():
+                        retry_after = max(retry_after, min(int(header), 3600))
+                elif isinstance(exc, httpx.TransportError):
+                    retryable = True
             cost = None
             if (
                 result
@@ -189,4 +198,7 @@ class AIGateway:
                 result.model = route.model
                 result.latency_ms = int((time.monotonic() - start) * 1000)
                 return result
-        raise RuntimeError("All configured AI providers failed")
+        failure = RuntimeError("All configured AI providers failed")
+        failure.retryable = retryable
+        failure.retry_after = retry_after
+        raise failure

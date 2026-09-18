@@ -1,7 +1,18 @@
 """Versioned automation records. Tenant compound keys are enforced by migration 018."""
+
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint, Index, func
+from sqlalchemy import (
+    String,
+    Text,
+    Integer,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    UniqueConstraint,
+    Index,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
@@ -16,7 +27,9 @@ class Automation(TenantEntity, Base):
     status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
     draft: Mapped[dict] = mapped_column(JSONB, default=dict)
     version: Mapped[int] = mapped_column(Integer, default=0)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AutomationVersion(TenantEntity, Base):
@@ -75,12 +88,17 @@ class AutomationExecution(TenantEntity, Base):
     resume_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(100))
-    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"), Index("ix_automation_execution_queue", "tenant_id", "state", "resume_at"))
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key"),
+        Index("ix_automation_execution_queue", "tenant_id", "state", "resume_at"),
+    )
 
 
 class AutomationStepExecution(TenantEntity, Base):
     __tablename__ = "automation_step_executions"
-    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("automation_executions.id"), index=True)
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("automation_executions.id"), index=True
+    )
     node_key: Mapped[str] = mapped_column(String(50))
     state: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
     input: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -132,7 +150,9 @@ class AutomationPolicy(TenantEntity, Base):
 
 class AutomationNotification(TenantEntity, Base):
     __tablename__ = "automation_notifications"
-    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("automation_executions.id"), index=True)
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("automation_executions.id"), index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     message: Mapped[str] = mapped_column(String(2000))
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

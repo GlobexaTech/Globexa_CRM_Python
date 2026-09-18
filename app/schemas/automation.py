@@ -1,4 +1,5 @@
 """Bounded declarative graph; no executable expressions or arbitrary action names."""
+
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -10,11 +11,33 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
 
-TRIGGERS = frozenset({"manual", "api", "scheduled", "lead.created", "lead.updated", "lead.stage_changed",
-    "contact.created", "contact.updated", "deal.created", "deal.updated", "deal.stage_changed", "task.created",
-    "task.completed", "message.received", "message.sent", "message.delivered", "message.failed",
-    "campaign.completed", "form.submitted", "webhook.received", "integration.connected",
-    "integration.disconnected", "AI.score_changed"})
+TRIGGERS = frozenset(
+    {
+        "manual",
+        "api",
+        "scheduled",
+        "lead.created",
+        "lead.updated",
+        "lead.stage_changed",
+        "contact.created",
+        "contact.updated",
+        "deal.created",
+        "deal.updated",
+        "deal.stage_changed",
+        "task.created",
+        "task.completed",
+        "message.received",
+        "message.sent",
+        "message.delivered",
+        "message.failed",
+        "campaign.completed",
+        "form.submitted",
+        "webhook.received",
+        "integration.connected",
+        "integration.disconnected",
+        "AI.score_changed",
+    }
+)
 
 
 class Limits(Strict):
@@ -104,7 +127,9 @@ class Definition(Strict):
         if self.trigger not in TRIGGERS:
             raise ValueError("Unsupported trigger")
         if (self.trigger == "scheduled") != (self.schedule is not None):
-            raise ValueError("Scheduled triggers require a schedule, other triggers cannot have one")
+            raise ValueError(
+                "Scheduled triggers require a schedule, other triggers cannot have one"
+            )
         return self
 
 
@@ -127,10 +152,11 @@ class ExecuteInput(Strict):
 
 class SimulateInput(Strict):
     context: dict = Field(default_factory=dict)
+    use_model: bool = False
 
 
 class DecisionOutput(Strict):
-    decision: bool
+    decision: bool = Field(strict=True)
     reason: str = Field(min_length=1, max_length=2000)
     confidence: float = Field(ge=0, le=1)
 
@@ -138,7 +164,7 @@ class DecisionOutput(Strict):
 class IntelligenceOutput(Strict):
     summary: str = Field(min_length=1, max_length=4000)
     classification: str | None = Field(None, max_length=100)
-    score: int | None = Field(None, ge=0, le=100)
+    score: int | None = Field(None, ge=0, le=100, strict=True)
     recommendation: str | None = Field(None, max_length=2000)
     draft: str | None = Field(None, max_length=8000)
     extracted: dict[str, str] = Field(default_factory=dict, max_length=20)

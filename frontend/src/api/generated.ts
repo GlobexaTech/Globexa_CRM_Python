@@ -3013,6 +3013,281 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/automation/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Catalog */
+        get: operations["catalog_api_v1_automation_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Policy */
+        get: operations["get_policy_api_v1_automation_policy_get"];
+        /** Set Policy */
+        put: operations["set_policy_api_v1_automation_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Metrics */
+        get: operations["metrics_api_v1_automation_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/intelligence/{kind}/{entity_type}/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Intelligence */
+        get: operations["intelligence_api_v1_automation_intelligence__kind___entity_type___entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Notifications */
+        get: operations["notifications_api_v1_automation_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read Notification */
+        post: operations["read_notification_api_v1_automation_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Executions */
+        get: operations["executions_api_v1_automation_executions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/executions/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution Detail */
+        get: operations["execution_detail_api_v1_automation_executions__execution_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/executions/{execution_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execution Transition */
+        post: operations["execution_transition_api_v1_automation_executions__execution_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflows */
+        get: operations["workflows_api_v1_automation_workflows_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_automation_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_automation_workflows__automation_id__get"];
+        /** Update */
+        put: operations["update_api_v1_automation_workflows__automation_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Versions */
+        get: operations["versions_api_v1_automation_workflows__automation_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate */
+        post: operations["validate_api_v1_automation_workflows__automation_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate */
+        post: operations["simulate_api_v1_automation_workflows__automation_id__simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute */
+        post: operations["execute_api_v1_automation_workflows__automation_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/automation/workflows/{automation_id}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Workflow Transition */
+        post: operations["workflow_transition_api_v1_automation_workflows__automation_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -3092,6 +3367,12 @@ export interface components {
         };
         /** ApprovalResponse */
         ApprovalResponse: {
+            /** Automation Execution Id */
+            automation_execution_id?: string | null;
+            /** Automation Version Id */
+            automation_version_id?: string | null;
+            /** Automation Step Id */
+            automation_step_id?: string | null;
             /**
              * Id
              * Format: uuid
@@ -3152,6 +3433,14 @@ export interface components {
             size: number;
             /** Provider Attachment Id */
             provider_attachment_id: string;
+        };
+        /** AutomationInput */
+        AutomationInput: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            definition: components["schemas"]["Definition"];
         };
         /** BatchAssignLeadsRequest */
         BatchAssignLeadsRequest: {
@@ -3228,6 +3517,33 @@ export interface components {
             errors: {
                 [key: string]: unknown;
             }[];
+        };
+        /** BusinessHours */
+        BusinessHours: {
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Weekdays */
+            weekdays?: number[];
+            /**
+             * Start
+             * @default 09:00
+             */
+            start: string;
+            /**
+             * End
+             * @default 17:00
+             */
+            end: string;
+            /** Holidays */
+            holidays?: string[];
+            /**
+             * Allow Outside Hours
+             * @default false
+             */
+            allow_outside_hours: boolean;
         };
         /** CampaignCreateInput */
         CampaignCreateInput: {
@@ -3915,12 +4231,36 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** Definition */
+        Definition: {
+            /** Trigger */
+            trigger: string;
+            /** Nodes */
+            nodes: components["schemas"]["Node"][];
+            /** Variables */
+            variables?: {
+                [key: string]: unknown;
+            };
+            /** Credentials */
+            credentials?: {
+                [key: string]: string;
+            };
+            business_hours?: components["schemas"]["BusinessHours"] | null;
+            schedule?: components["schemas"]["Schedule"] | null;
+        };
         /** EnrichmentInput */
         EnrichmentInput: {
             /** Contact Id */
             contact_id?: string | null;
             /** Lead Id */
             lead_id?: string | null;
+        };
+        /** ExecuteInput */
+        ExecuteInput: {
+            /** Entity Type */
+            entity_type?: ("lead" | "contact" | "deal" | "task" | "message" | "campaign") | null;
+            /** Entity Id */
+            entity_id?: string | null;
         };
         /** ExecutionContext */
         ExecutionContext: {
@@ -4492,6 +4832,74 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** Limits */
+        Limits: {
+            /**
+             * Daily Executions
+             * @default 1000
+             */
+            daily_executions: number;
+            /**
+             * Monthly Executions
+             * @default 10000
+             */
+            monthly_executions: number;
+            /**
+             * Queued Executions
+             * @default 100
+             */
+            queued_executions: number;
+            /**
+             * Max Steps
+             * @default 64
+             */
+            max_steps: number;
+            /**
+             * Max Depth
+             * @default 5
+             */
+            max_depth: number;
+            /**
+             * Max Runtime Seconds
+             * @default 604800
+             */
+            max_runtime_seconds: number;
+            /**
+             * Max Ai Calls
+             * @default 5
+             */
+            max_ai_calls: number;
+            /**
+             * Daily Ai Calls
+             * @default 20
+             */
+            daily_ai_calls: number;
+            /**
+             * Monthly Ai Calls
+             * @default 200
+             */
+            monthly_ai_calls: number;
+            /**
+             * Tenant Per Minute
+             * @default 120
+             */
+            tenant_per_minute: number;
+            /**
+             * Provider Per Minute
+             * @default 20
+             */
+            provider_per_minute: number;
+            /**
+             * Action Per Minute
+             * @default 60
+             */
+            action_per_minute: number;
+            /**
+             * Require Internal Approval
+             * @default false
+             */
+            require_internal_approval: boolean;
+        };
         /** MembershipCreate */
         MembershipCreate: {
             /**
@@ -4588,6 +4996,48 @@ export interface components {
         NextActionRequest: {
             /** Correlation Id */
             correlation_id?: string | null;
+        };
+        /** Node */
+        Node: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "condition" | "action" | "delay" | "ai" | "ai_decision" | "approval" | "intelligence";
+            /** Action */
+            action?: string | null;
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+            /** Condition */
+            condition?: {
+                [key: string]: unknown;
+            } | null;
+            /** Next */
+            next?: string | null;
+            /** On False */
+            on_false?: string | null;
+            /**
+             * On Error
+             * @default stop
+             * @enum {string}
+             */
+            on_error: "stop" | "continue" | "fallback";
+            /** Fallback */
+            fallback?: string | null;
+            /**
+             * Max Retries
+             * @default 2
+             */
+            max_retries: number;
+            /**
+             * Backoff Seconds
+             * @default 10
+             */
+            backoff_seconds: number;
         };
         /** NoteCreate */
         NoteCreate: {
@@ -4862,6 +5312,35 @@ export interface components {
             /** Correlation Id */
             correlation_id?: string | null;
         };
+        /** Schedule */
+        Schedule: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "once" | "daily" | "weekly" | "monthly" | "cron";
+            /** Timezone */
+            timezone: string;
+            /** At */
+            at?: string | null;
+            /**
+             * Time
+             * @default 09:00
+             */
+            time: string;
+            /**
+             * Weekday
+             * @default 0
+             */
+            weekday: number;
+            /**
+             * Day
+             * @default 1
+             */
+            day: number;
+            /** Cron */
+            cron?: string | null;
+        };
         /** ScheduleInput */
         ScheduleInput: {
             /**
@@ -4874,6 +5353,18 @@ export interface components {
         ScoreLeadRequest: {
             /** Correlation Id */
             correlation_id?: string | null;
+        };
+        /** SimulateInput */
+        SimulateInput: {
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Use Model
+             * @default false
+             */
+            use_model: boolean;
         };
         /** StageCreate */
         StageCreate: {
@@ -12922,6 +13413,685 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    catalog_api_v1_automation_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_policy_api_v1_automation_policy_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Limits"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_policy_api_v1_automation_policy_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Limits"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Limits"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metrics_api_v1_automation_analytics_get: {
+        parameters: {
+            query?: {
+                automation_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    intelligence_api_v1_automation_intelligence__kind___entity_type___entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                kind: "lead" | "deal" | "customer" | "campaign" | "next_best_action";
+                entity_type: "lead" | "deal" | "contact" | "campaign";
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notifications_api_v1_automation_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_notification_api_v1_automation_notifications__notification_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    executions_api_v1_automation_executions_get: {
+        parameters: {
+            query?: {
+                automation_id?: string | null;
+                state?: ("QUEUED" | "RUNNING" | "WAITING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED" | "EXPIRED") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execution_detail_api_v1_automation_executions__execution_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execution_transition_api_v1_automation_executions__execution_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                execution_id: string;
+                action: "pause" | "resume" | "cancel" | "retry";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflows_api_v1_automation_workflows_get: {
+        parameters: {
+            query?: {
+                status?: ("DRAFT" | "ACTIVE" | "PAUSED" | "DISABLED" | "ARCHIVED") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_v1_automation_workflows_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_automation_workflows__automation_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_api_v1_automation_workflows__automation_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    versions_api_v1_automation_workflows__automation_id__versions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_api_v1_automation_workflows__automation_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_api_v1_automation_workflows__automation_id__simulate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_api_v1_automation_workflows__automation_id__execute_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_transition_api_v1_automation_workflows__automation_id___action__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                automation_id: string;
+                action: "publish" | "pause" | "resume" | "disable" | "archive" | "clone";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {

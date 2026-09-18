@@ -22,6 +22,7 @@ from app.services.crm.providers import adapter_for, ProviderFailure
 from app.services.crm.integrations import access_token
 from app.services.crm.conversations import suppressed, ingest_message
 from app.services.crm.campaigns import update_stats
+from app.services.ai.approval import AutomationSendDeferred
 
 JOB_PERMISSIONS = {
     "campaign_send": "campaigns:send",
@@ -37,6 +38,16 @@ JOB_PERMISSIONS = {
 
 
 async def execute_job(db, tenant_id, job_id, *, gateway=None):
+    from app.core.events import automation_chain
+    payload = await db.scalar(select(OperationJob.payload).where(OperationJob.tenant_id == tenant_id, OperationJob.id == job_id))
+    token = automation_chain.set((payload or {}).get("_automation_chain"))
+    try:
+        return await _execute_job(db, tenant_id, job_id, gateway=gateway)
+    finally:
+        automation_chain.reset(token)
+
+
+async def _execute_job(db, tenant_id, job_id, *, gateway=None):
     job = await db.scalar(
         select(OperationJob)
         .where(OperationJob.tenant_id == tenant_id, OperationJob.id == job_id)
@@ -294,6 +305,15 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
             )
         if job.kind == "campaign_send":
             await update_stats(db, tenant_id, UUID(job.payload["campaign_id"]))
+        await db.commit()
+    except AutomationSendDeferred as exc:
+        await db.refresh(job)
+        job.status, job.available_at, job.claimed_at = "retry", exc.resume_at, None
+        job.attempts = max(0, job.attempts - 1)
+        message = await db.scalar(select(Message).where(Message.tenant_id == tenant_id,
+            Message.idempotency_key == "job:" + str(job.id)))
+        if message:
+            message.status = "queued"
         await db.commit()
     except (
         ProviderFailure,

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { Plus, Zap } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { Dialog } from "@/components/Dialog";
@@ -87,6 +88,7 @@ function WorkflowWorkspace({ can }: { can: (permission: string) => boolean }) {
             <p className="crm-muted">
               Event-driven workflows with approved actions
             </p>
+            <Link className="crm-secondary mt-3" href="/automations/advanced">Advanced workflow builder</Link>
           </div>
           {can("automation:write") && (
             <button className="crm-button" onClick={() => setCreate(true)}>

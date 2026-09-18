@@ -1,12 +1,16 @@
 """Actions reuse existing tools/services; custom actions have explicit permission/schema maps."""
-from datetime import datetime
+
 from typing import Literal
 from uuid import UUID
 from fastapi import HTTPException
 from pydantic import Field, EmailStr
-from sqlalchemy import select
 from app.schemas.automation import Strict
-from app.services.ai.workforce_tools import TOOL_SPECS, validate_arguments, validate_ownership, execute_tool, action_binding
+from app.services.ai.workforce_tools import (
+    TOOL_SPECS,
+    validate_ownership,
+    execute_tool,
+    action_binding,
+)
 from app.services.crm.common import authorize, owned, audit
 from app.services.crm.automation import perform_action, relations
 from app.services.ai.safety import safe_data
@@ -71,8 +75,10 @@ EXTRA = {
     "update_contact": ("contacts:write", ContactUpdate),
     "change_deal_stage": ("deals:write", DealStage),
     "assign_owner": ("leads:assign", Owner),
-    "add_tag": ("automation:write", Tag), "remove_tag": ("automation:write", Tag),
-    "start_automation": ("automation:write", Start), "stop_automation": ("automation:write", Stop),
+    "add_tag": ("automation:write", Tag),
+    "remove_tag": ("automation:write", Tag),
+    "start_automation": ("automation:write", Start),
+    "stop_automation": ("automation:write", Stop),
     "create_notification": ("automation:write", Notification),
     "webhook_call": ("integrations:webhooks", Webhook),
     "request_approval": ("automation:write", ApprovalGate),
@@ -87,12 +93,17 @@ def canonical(name):
 
 
 def schema_for(name):
-    if name not in ACTIONS: raise HTTPException(422, "Unsupported automation action")
+    if name not in ACTIONS:
+        raise HTTPException(422, "Unsupported automation action")
     return TOOL_SPECS[canonical(name)][1] if canonical(name) in STANDARD else EXTRA[name][1]
 
 
 def arguments_for(name, args):
     safe_data(args)
+    if name in {"create_task", "create_note"} and not any(
+        args.get(key) for key in ("lead_id", "deal_id", "contact_id", "company_id")
+    ):
+        raise HTTPException(422, "A customer relation is required")
     return schema_for(name).model_validate(args).model_dump(mode="json", exclude_none=True)
 
 
@@ -109,64 +120,130 @@ async def permitted(db, tenant_id, actor_id, name, args):
     if name in {"create_contact", "update_contact"}:
         await relations(db, tenant_id, {k: UUID(v) for k, v in args.items() if k.endswith("_id")})
     if name in {"assign_owner", "change_deal_stage"}:
-        await owned(db, Lead if name == "assign_owner" else Deal, tenant_id, UUID(args["entity_id"]))
-        await relations(db, tenant_id, {"owner_id": UUID(args["owner_id"])} if "owner_id" in args else {})
+        await owned(
+            db, Lead if name == "assign_owner" else Deal, tenant_id, UUID(args["entity_id"])
+        )
+        await relations(
+            db, tenant_id, {"owner_id": UUID(args["owner_id"])} if "owner_id" in args else {}
+        )
     if name in {"add_tag", "remove_tag"}:
         await authorize(db, tenant_id, actor_id, args["entity_type"] + "s:write")
-        await owned(db, {"lead": Lead, "contact": Contact, "deal": Deal, "task": Task}[args["entity_type"]], tenant_id, UUID(args["entity_id"]))
+        await owned(
+            db,
+            {"lead": Lead, "contact": Contact, "deal": Deal, "task": Task}[args["entity_type"]],
+            tenant_id,
+            UUID(args["entity_id"]),
+        )
     if name == "webhook_call":
         from app.services.automation.webhook import validate_destination
+
         validate_destination(args["url"])
     if name == "start_automation":
         from app.models import Automation
+
         await owned(db, Automation, tenant_id, UUID(args["automation_id"]))
     if name == "stop_automation":
         from app.models import AutomationExecution
+
         await owned(db, AutomationExecution, tenant_id, UUID(args["execution_id"]))
     return args
 
 
 async def binding(db, tenant_id, name, args):
-    return await action_binding(db, tenant_id, canonical(name), args) if canonical(name) in STANDARD else {}
+    return (
+        await action_binding(db, tenant_id, canonical(name), args)
+        if canonical(name) in STANDARD
+        else {}
+    )
 
 
 async def execute(db, tenant_id, actor_id, name, args, key, execution):
     args = await permitted(db, tenant_id, actor_id, name, args)
     if canonical(name) in STANDARD:
-        return await execute_tool(db, tenant_id, actor_id, canonical(name), args, key, approved=True)
+        return await execute_tool(
+            db, tenant_id, actor_id, canonical(name), args, key, approved=True
+        )
     if name == "create_contact":
-        row = Contact(tenant_id=tenant_id, created_by_id=actor_id, **{k: UUID(v) if k.endswith("_id") else v for k, v in args.items()})
-        db.add(row); await db.flush(); result = {"id": str(row.id)}
+        row = Contact(
+            tenant_id=tenant_id,
+            created_by_id=actor_id,
+            **{k: UUID(v) if k.endswith("_id") else v for k, v in args.items()},
+        )
+        db.add(row)
+        await db.flush()
+        result = {"id": str(row.id)}
     elif name == "update_contact":
         row = await owned(db, Contact, tenant_id, UUID(args["contact_id"]), True)
         for field, value in args.items():
-            if field != "contact_id": setattr(row, field, value)
-        row.updated_by_id = actor_id; result = {"id": str(row.id)}
+            if field != "contact_id":
+                setattr(row, field, value)
+        row.updated_by_id = actor_id
+        result = {"id": str(row.id)}
     elif name in {"assign_owner", "change_deal_stage"}:
-        result = await perform_action(db, tenant_id, actor_id, "update_deal" if name == "change_deal_stage" else name, args, key)
+        result = await perform_action(
+            db,
+            tenant_id,
+            actor_id,
+            "update_deal" if name == "change_deal_stage" else name,
+            args,
+            key,
+        )
     elif name in {"add_tag", "remove_tag"}:
-        row = await owned(db, {"lead": Lead, "contact": Contact, "deal": Deal, "task": Task}[args["entity_type"]], tenant_id, UUID(args["entity_id"]), True)
+        row = await owned(
+            db,
+            {"lead": Lead, "contact": Contact, "deal": Deal, "task": Task}[args["entity_type"]],
+            tenant_id,
+            UUID(args["entity_id"]),
+            True,
+        )
         tags = set((row.custom_fields or {}).get("automation_tags", []))
-        if name == "add_tag": tags.add(args["tag"])
-        else: tags.discard(args["tag"])
-        if len(tags) > 50: raise HTTPException(422, "Entity tag limit reached")
+        if name == "add_tag":
+            tags.add(args["tag"])
+        else:
+            tags.discard(args["tag"])
+        if len(tags) > 50:
+            raise HTTPException(422, "Entity tag limit reached")
         row.custom_fields = {**(row.custom_fields or {}), "automation_tags": sorted(tags)}
         result = {"id": str(row.id), "tags": sorted(tags)}
     elif name == "create_notification":
-        row = AutomationNotification(tenant_id=tenant_id, execution_id=execution.id, user_id=actor_id, message=args["message"])
-        db.add(row); await db.flush(); result = {"id": str(row.id)}
+        row = AutomationNotification(
+            tenant_id=tenant_id,
+            execution_id=execution.id,
+            user_id=actor_id,
+            message=args["message"],
+        )
+        db.add(row)
+        await db.flush()
+        result = {"id": str(row.id)}
     elif name == "start_automation":
         from app.services.automation.engine import request_execution
-        row = await request_execution(db, tenant_id, actor_id, UUID(args["automation_id"]), execution.input.get("entity", {}), key, parent=execution)
+
+        row = await request_execution(
+            db,
+            tenant_id,
+            actor_id,
+            UUID(args["automation_id"]),
+            execution.input.get("entity", {}),
+            key,
+            parent=execution,
+        )
         result = {"execution_id": str(row.id)}
     elif name == "stop_automation":
         from app.services.automation.engine import transition_execution
-        row = await transition_execution(db, tenant_id, actor_id, UUID(args["execution_id"]), "cancel")
+
+        row = await transition_execution(
+            db, tenant_id, actor_id, UUID(args["execution_id"]), "cancel"
+        )
         result = {"execution_id": str(row.id), "status": row.state}
-    elif name == "request_approval": result = {"approved": True}
+    elif name == "request_approval":
+        result = {"approved": True}
     elif name == "webhook_call":
         from app.services.automation.webhook import deliver
+
         result = await deliver(args["url"], args["payload"], key)
-    else: raise HTTPException(422, "Unsupported automation action")
-    audit(db, tenant_id, actor_id, "automation.action." + name, "automation_execution", execution.id)
+    else:
+        raise HTTPException(422, "Unsupported automation action")
+    audit(
+        db, tenant_id, actor_id, "automation.action." + name, "automation_execution", execution.id
+    )
     return result
