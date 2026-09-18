@@ -47,7 +47,11 @@ export async function backend(request: APIRequestContext, role = "owner") {
   };
   return {
     get: (path: string) =>
-      request.get(`${fixture.backend}/api/v1${path}`, { headers }),
+      request.get(`${fixture.backend}/api/v1${path}`, {
+        headers,
+        // Retry one reset read connection; never replay mutations or retry HTTP failures.
+        maxRetries: 1,
+      }),
     post: (path: string, data: unknown) =>
       request.post(`${fixture.backend}/api/v1${path}`, { headers, data }),
     patch: (path: string, data: unknown) =>
