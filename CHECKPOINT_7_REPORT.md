@@ -30,7 +30,7 @@ The baseline certificate does not certify subsequent changes. Acceptance of the 
 | Approval | Exact normalized payload, provider grant, automation, immutable version, execution and step; independent authorized reviewer; live cancellation/expiry/revocation checks. |
 | Next best action, lead/deal intelligence | Recommendations and reasons from stored facts; explainable lead scores and duplicate candidates; deal stage age, ownership and overdue tasks; no automatic duplicate merge. |
 | Customer 360, campaign intelligence | Existing permission-scoped customer aggregation and persisted provider metrics; unsupported conversion attribution remains unavailable. |
-| Frontend, builder | Advanced workflow route, visual typed steps/branches/delays/AI/approval, versions, lifecycle controls, pagination, timeline, notifications and analytics through the secure BFF. |
+| Frontend, builder | Advanced workflow route, visual typed steps/branches/delays/AI/approval, versions, lifecycle controls, pagination, timeline and analytics through the secure BFF; notification records are available through the automation API. |
 | Dry run, simulator | Default bounded no-model simulation; explicitly selected metered model-assisted simulation records actual model decisions and usage; neither mode mutates CRM or sends messages. |
 
 Three persisted integration flows are mandatory in the gate: lead scoring → AI decision → independent approvals → draft/send → analytics; deal-stage event → health/next action → approved task; inbound provider message → classification/support draft → approvals/send. External transports are deterministic contract adapters, while actual CRM services, database, approval and worker code execute.
