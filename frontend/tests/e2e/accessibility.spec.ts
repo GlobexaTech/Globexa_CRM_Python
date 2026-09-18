@@ -113,6 +113,9 @@ for (const size of sizes) {
     test.setTimeout(240000);
     await page.setViewportSize(size);
     await loginUI(page);
+    // Login redirects before the dashboard request finishes. Readiness prevents
+    // the next navigation from capturing and cancelling that previous response.
+    await expect(page.getByRole("region", { name: "Pipeline values", exact: true })).toBeVisible();
     for (const route of routes) {
       const { path } = route;
       await test.step(path, async () => {
