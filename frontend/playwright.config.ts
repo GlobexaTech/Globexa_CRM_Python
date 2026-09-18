@@ -14,6 +14,6 @@ export default defineConfig({
   expect: { timeout: 15000 },
   reporter: [["list"], ["html", { outputFolder: "../evidence/playwright-report", open: "never" }], ["junit", { outputFile: "../evidence/frontend-e2e.xml" }]],
   outputDir: "../evidence/playwright-results",
-  use: { baseURL: origin, screenshot: "only-on-failure", trace: "off", video: "off", actionTimeout: 15000 },
+  use: { baseURL: origin, screenshot: "only-on-failure", trace: "off", video: "off", actionTimeout: 15000, ...(["chromium", "chrome", "msedge"].includes(process.env.PLAYWRIGHT_CHANNEL || "") ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

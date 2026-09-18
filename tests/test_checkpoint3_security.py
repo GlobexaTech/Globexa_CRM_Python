@@ -349,11 +349,13 @@ async def test_mail_adapter_http_send_contract(provider):
 
     async def handle(request):
         requests.append(request)
-        return (
-            httpx.Response(200, json={"id": "provider-message", "threadId": "thread"})
-            if provider == "gmail"
-            else httpx.Response(202)
-        )
+        if provider == "gmail":
+            return httpx.Response(200, json={"id": "provider-message", "threadId": "thread"})
+        # Graph creates a draft first so the immutable provider message ID is retained.
+        if request.url.path == "/v1.0/me/messages":
+            return httpx.Response(201, json={"id": "provider-message", "conversationId": "thread"})
+        assert request.url.path == "/v1.0/me/messages/provider-message/send"
+        return httpx.Response(202)
 
     adapter = MailAdapter(provider, transport=httpx.MockTransport(handle))
     result = await adapter.send(
@@ -362,9 +364,7 @@ async def test_mail_adapter_http_send_contract(provider):
         "job-1",
     )
     assert result["status"] == "sent"
-    assert result["provider_message_id"] == (
-        "provider-message" if provider == "gmail" else None
-    )
+    assert result["provider_message_id"] == "provider-message"
     assert requests[0].url.host in {"gmail.googleapis.com", "graph.microsoft.com"}
     assert adapter.idempotent_send is False
 

@@ -10,32 +10,234 @@ from app.core.credentials import EncryptedText
 
 class TenantEntity:
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"tenants.id\"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class OAuthToken(TenantEntity, Base):
-    __tablename__ = \"oauth_tokens\"\n    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"integrations.id\"), nullable=False)\n    access_token: Mapped[str] = mapped_column(EncryptedText(), nullable=False)\n    refresh_token: Mapped[str | None] = mapped_column(EncryptedText())\n    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))\n    scopes: Mapped[list] = mapped_column(JSONB, default=list)\n\n\nclass DomainEvent(TenantEntity, Base):
-    __tablename__ = \"domain_events\"\n    event_type: Mapped[str] = mapped_column(String(100), nullable=False)\n    version: Mapped[int] = mapped_column(Integer, default=1)\n    aggregate_id: Mapped[str] = mapped_column(String(100), nullable=False)\n    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"users.id\"))\n    payload: Mapped[dict] = mapped_column(JSONB, default=dict)\n    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)\n    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"idempotency_key\"),)\n\n\nclass EventDelivery(TenantEntity, Base):
-    __tablename__ = \"event_deliveries\"\n    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"domain_events.id\"), nullable=False)\n    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"event_id\", \"subscriber\"),)\n\n\nclass WebhookReceipt(TenantEntity, Base):
-    __tablename__ = \"webhook_receipts\"\n    webhook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"webhook_endpoints.id\"), nullable=False)\n    provider_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)\n    digest: Mapped[str] = mapped_column(String(64), nullable=False)\n    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"domain_events.id\"), nullable=False)\n    __table_args__ = (\n        UniqueConstraint(\"tenant_id\", \"webhook_id\", \"provider_event_id\"),\n        UniqueConstraint(\"tenant_id\", \"webhook_id\", \"digest\"),\n    )\n\n\nclass Workflow(TenantEntity, Base):
-    __tablename__ = \"workflows\"\n    name: Mapped[str] = mapped_column(String(255), nullable=False)\n    enabled: Mapped[bool] = mapped_column(Boolean, default=False)\n    version: Mapped[int] = mapped_column(Integer, default=1)\n    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"users.id\"))\n\n\nclass Trigger(TenantEntity, Base):
-    __tablename__ = \"workflow_triggers\"\n    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"workflows.id\"), nullable=False)\n    event_type: Mapped[str] = mapped_column(String(100), nullable=False)\n\n\nclass Condition(TenantEntity, Base):
-    __tablename__ = \"workflow_conditions\"\n    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"workflows.id\"), nullable=False)\n    expression: Mapped[dict] = mapped_column(JSONB, default=dict)\n\n\nclass Action(TenantEntity, Base):
-    __tablename__ = \"workflow_actions\"\n    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"workflows.id\"), nullable=False)\n    tool: Mapped[str] = mapped_column(String(100), nullable=False)\n    arguments: Mapped[dict] = mapped_column(JSONB, default=dict)\n    position: Mapped[int] = mapped_column(Integer, default=0)\n\n\nclass ExecutionLog(TenantEntity, Base):
-    __tablename__ = \"workflow_execution_logs\"\n    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"workflows.id\"), nullable=False)\n    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"domain_events.id\"), nullable=False)\n    status: Mapped[str] = mapped_column(String(30), default=\"pending\")\n    error_code: Mapped[str | None] = mapped_column(String(100))\n    workflow_version: Mapped[int] = mapped_column(Integer, default=1)\n    attempts: Mapped[int] = mapped_column(Integer, default=0)\n    snapshot: Mapped[dict] = mapped_column(JSONB, default=dict)\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"workflow_id\", \"event_id\"),)\n\n\nclass Plan(Base):
-    __tablename__ = \"plans\"\n    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)\n    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)\n    name: Mapped[str] = mapped_column(String(255), nullable=False)\n\n\nclass Feature(Base):
-    __tablename__ = \"features\"\n    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)\n    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)\n    unit: Mapped[str] = mapped_column(String(50), nullable=False)\n\n\nclass PlanFeature(Base):
-    __tablename__ = \"plan_features\"\n    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"plans.id\"), primary_key=True)\n    feature_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"features.id\"), primary_key=True)\n    limit_value: Mapped[int | None] = mapped_column(Integer)\n    enabled: Mapped[bool] = mapped_column(Boolean, default=True)\n\n\nclass Conversation(TenantEntity, Base):
-    __tablename__ = \"conversations\"\n    subject: Mapped[str] = mapped_column(String(255), nullable=False)\n    channel: Mapped[str] = mapped_column(String(30), default=\"email\")\n    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"contacts.id\"))\n    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"companies.id\"))\n    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"leads.id\"))\n    integration_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(\"integrations.id\"))\n    provider_thread_id: Mapped[str | None] = mapped_column(String(255))\n    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))\n    unread_count: Mapped[int] = mapped_column(Integer, default=0)\n\n\nclass Message(TenantEntity, Base):
-    __tablename__ = \"messages\"\n    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(\"conversations.id\"), nullable=False)\n    body: Mapped[str] = mapped_column(Text, nullable=False)\n    direction: Mapped[str] = mapped_column(String(20), default=\"inbound\")\n    status: Mapped[str] = mapped_column(String(30), default=\"received\")\n    sender: Mapped[str | None] = mapped_column(String(255))\n    recipient: Mapped[str | None] = mapped_column(String(255))\n    provider_message_id: Mapped[str | None] = mapped_column(String(255))\n    attachments: Mapped[list] = mapped_column(JSONB, default=list)\n    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())\n    idempotency_key: Mapped[str | None] = mapped_column(String(255))\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"idempotency_key\"),)\n\n\nclass AgentDefinition(TenantEntity, Base):
-    \"\"\"Configuration only; this checkpoint provides no autonomous agent executor.\"\"\"\n    __tablename__ = \"agent_definitions\"\n    name: Mapped[str] = mapped_column(String(255), nullable=False)\n    approved_tools: Mapped[list] = mapped_column(JSONB, default=list)\n\n\n# =============================================================================\n# AI-related models (for AI Router usage ledger)\n# =============================================================================\n\nclass AIProviderEnum(str, enum.Enum):
-    \"\"\"AI provider types.\"\"\"\n    OLLAMA = \"ollama\"\n    NVIDIA = \"nvidia\"\n    DEEPSEEK = \"deepseek\"\n    OPENAI = \"openai\"\n    ANTHROPIC = \"anthropic\"\n    GOOGLE = \"google\"\n\n\nclass AITaskTypeEnum(str, enum.Enum):
-    \"\"\"AI task types per blueprint.\"\"\"\n    CLASSIFICATION = \"classification\"\n    SIMPLE_SCORING = \"simple_scoring\"\n    EXTRACTION = \"extraction\"\n    SUMMARIZATION = \"summarization\"\n    INTENT_IDENTIFICATION = \"intent_identification\"\n    TAGGING = \"tagging\"\n    ROUTING_DECISION = \"routing_decision\"\n    LEAD_SCORING = \"lead_scoring\"\n    PERSONALIZATION = \"personalization\"\n    CAMPAIGN_GENERATION = \"campaign_generation\"\n    PROPOSAL_GENERATION = \"proposal_generation\"\n    REPLY_ANALYSIS = \"reply_analysis\"\n    REPLY_GENERATION = \"reply_generation\"\n    NEXT_BEST_ACTION = \"next_best_action\"\n    LEAD_MINING = \"lead_mining\"\n    RESEARCH = \"research\"\n    CHAT_ASSISTANT = \"chat_assistant\"\n\n\nclass AIUsageLog(Base):
-    \"\"\"AI invocation ledger per blueprint - every AI request recorded.\"\"\"\n    __tablename__ = \"ai_usage_logs\"\n\n    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)\n    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(\"tenants.id\", ondelete=\"CASCADE\"), nullable=False, index=True)\n    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(\"users.id\", ondelete=\"SET NULL\"), nullable=True)\n    task_type: Mapped[AITaskTypeEnum] = mapped_column(pg_enum(AITaskTypeEnum, \"ai_task_type_enum\"), nullable=False, index=True)\n    provider: Mapped[AIProviderEnum] = mapped_column(pg_enum(AIProviderEnum, \"ai_provider_enum\"), nullable=False)\n    model: Mapped[str] = mapped_column(String(100), nullable=False)\n    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)\n    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)\n    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)\n    estimated_cost_usd: Mapped[Optional[float]] = mapped_column(nullable=True)\n    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)\n    success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)\n    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)\n    tool_actions: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)\n\n\n# Register architectural foundations in the authoritative metadata registry.\nfrom app.models.foundation import (OAuthToken, DomainEvent, EventDelivery, WebhookReceipt,\n    Workflow, Trigger, Condition, Action, ExecutionLog, Plan, Feature, PlanFeature,\n    Conversation, Message, AgentDefinition)\n\n# Existing entities retain their storage and API identities.\nWebhook = WebhookEndpoint\nSyncJob = IntegrationSyncLog\nfrom app.models.operations import (Participant, AnalyticsEvent, OperationJob, AIInsight,\n                                   OAuthSession, WorkflowRevision)\n\n\n# =============================================================================\n# CRM operations extend existing entities; all records are tenant owned.\n# =============================================================================\n\nfrom datetime import datetime\nfrom uuid import UUID\nfrom sqlalchemy import (\n    String,\n    Text,\n    Integer,\n    Float,\n    DateTime,\n    ForeignKey,\n    UniqueConstraint,\n    func,\n)\nfrom sqlalchemy.dialects.postgresql import JSONB\nfrom sqlalchemy.orm import Mapped, mapped_column\nfrom app.core.database import Base\nfrom app.core.credentials import EncryptedText\nfrom app.models.foundation import TenantEntity\n\n\nclass Participant(TenantEntity, Base):
-    __tablename__ = \"conversation_participants\"\n    conversation_id: Mapped[UUID] = mapped_column(ForeignKey(\"conversations.id\"))\n    address: Mapped[str] = mapped_column(String(255))\n    name: Mapped[str | None] = mapped_column(String(255))\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"conversation_id\", \"address\"),)\n\n\nclass AnalyticsEvent(TenantEntity, Base):
-    __tablename__ = \"analytics_events\"\n    event_id: Mapped[UUID | None] = mapped_column(ForeignKey(\"domain_events.id\"))\n    event_type: Mapped[String] = mapped_column(String(100))\n    entity_id: Mapped[String] = mapped_column(String(100))\n    value: Mapped[Float | None] = mapped_column(Float)\n    dimensions: Mapped[dict] = mapped_column(JSONB, default=dict)\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"event_id\"),)\n\n\nclass OperationJob(TenantEntity, Base):
-    __tablename__ = \"operation_jobs\"\n    kind: Mapped[String] = mapped_column(String(40))\n    actor_id: Mapped[UUID | None] = mapped_column(ForeignKey(\"users.id\"))\n    status: Mapped[String] = mapped_column(String(30), default=\"pending\")\n    idempotency_key: Mapped[String] = mapped_column(String(255))\n    payload: Mapped[dict] = mapped_column(JSONB, default=dict)\n    result: Mapped[dict] = mapped_column(JSONB, default=dict)\n    attempts: Mapped[Integer] = mapped_column(Integer, default=0)\n    error_code: Mapped[String | None] = mapped_column(String(100))\n    available_at: Mapped[DateTime(timezone=True), server_default=func.now()]\n    claimed_at: Mapped[DateTime(timezone=True) | None] = mapped_column(DateTime(timezone=True))\n    completed_at: Mapped[DateTime(timezone=True) | None] = mapped_column(DateTime(timezone=True))\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"idempotency_key\"),)\n\n\nclass AIInsight(TenantEntity, Base):
-    __tablename__ = \"ai_insights\"\n    job_id: Mapped[UUID] = mapped_column(ForeignKey(\"operation_jobs.id\"))\n    capability: Mapped[String] = mapped_column(String(50))\n    entity_type: Mapped[String] = mapped_column(String(30))\n    entity_id: Mapped[UUID | None]\n    output: Mapped[dict] = mapped_column(JSONB)\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"job_id\"),)\n\n\nclass OAuthSession(TenantEntity, Base):
-    __tablename__ = \"oauth_sessions\"\n    integration_id: Mapped[UUID] = mapped_column(ForeignKey(\"integrations.id\"))\n    actor_id: Mapped[UUID] = mapped_column(ForeignKey(\"users.id\"))\n    state_hash: Mapped[String] = mapped_column(String(64), unique=True)\n    verifier: Mapped[EncryptedText()]\n    redirect_uri: Mapped[Text]\n    expires_at: Mapped[DateTime(timezone=True)]\n    consumed_at: Mapped[DateTime(timezone=True) | None] = mapped_column(DateTime(timezone=True))\n\n\nclass WorkflowRevision(TenantEntity, Base):
-    __tablename__ = \"workflow_revisions\"\n    workflow_id: Mapped[UUID] = mapped_column(ForeignKey(\"workflows.id\"))\n    version: Mapped[Integer] = mapped_column(Integer)\n    definition: Mapped[dict] = mapped_column(JSONB)\n    __table_args__ = (UniqueConstraint(\"tenant_id\", \"workflow_id\", \"version\"),)\n\n"
+    __tablename__ = "oauth_tokens"
+    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("integrations.id"), nullable=False)
+    access_token: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(EncryptedText())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[list] = mapped_column(JSONB, default=list)
+
+
+class DomainEvent(TenantEntity, Base):
+    __tablename__ = "domain_events"
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    aggregate_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"),)
+
+
+class EventDelivery(TenantEntity, Base):
+    __tablename__ = "event_deliveries"
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domain_events.id"), nullable=False)
+    subscriber: Mapped[str] = mapped_column(String(100), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("tenant_id", "event_id", "subscriber"),)
+
+
+class WebhookReceipt(TenantEntity, Base):
+    __tablename__ = "webhook_receipts"
+    webhook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("webhook_endpoints.id"), nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domain_events.id"), nullable=False)
+    state: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("tenant_id", "webhook_id", "digest"),)
+
+
+class Workflow(TenantEntity, Base):
+    __tablename__ = "workflows"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
+class Trigger(TenantEntity, Base):
+    __tablename__ = "workflow_triggers"
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class Condition(TenantEntity, Base):
+    __tablename__ = "workflow_conditions"
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    expression: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class Action(TenantEntity, Base):
+    __tablename__ = "workflow_actions"
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    tool: Mapped[str] = mapped_column(String(100), nullable=False)
+    arguments: Mapped[dict] = mapped_column(JSONB, default=dict)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ExecutionLog(TenantEntity, Base):
+    __tablename__ = "workflow_execution_logs"
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("domain_events.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    workflow_version: Mapped[int] = mapped_column(Integer, default=1)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    snapshot: Mapped[dict] = mapped_column(JSONB, default=dict)
+    __table_args__ = (UniqueConstraint("tenant_id", "workflow_id", "event_id"),)
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class Feature(Base):
+    __tablename__ = "features"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    unit: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
+class PlanFeature(Base):
+    __tablename__ = "plan_features"
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plans.id"), primary_key=True)
+    feature_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("features.id"), primary_key=True)
+    limit_value: Mapped[int | None] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Conversation(TenantEntity, Base):
+    __tablename__ = "conversations"
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(30), default="email")
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("contacts.id"))
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id"))
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id"))
+    integration_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("integrations.id"))
+    provider_thread_id: Mapped[str | None] = mapped_column(String(255))
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    unread_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Message(TenantEntity, Base):
+    __tablename__ = "messages"
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), default="inbound")
+    status: Mapped[str] = mapped_column(String(30), default="received")
+    sender: Mapped[str | None] = mapped_column(String(255))
+    recipient: Mapped[str | None] = mapped_column(String(255))
+    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    attachments: Mapped[list] = mapped_column(JSONB, default=list)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"),)
+
+
+class AgentDefinition(TenantEntity, Base):
+    """Tenant-scoped allowlist used by controlled workforce execution."""
+    __tablename__ = "agent_definitions"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    approved_tools: Mapped[list] = mapped_column(JSONB, default=list)
+
+class AgentExecution(TenantEntity, Base):
+    __tablename__ = "agent_executions"
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    task: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    state: Mapped[str] = mapped_column(String(30), default="queued", nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("operation_jobs.id"))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    model: Mapped[str | None] = mapped_column(String(100))
+    provider: Mapped[str | None] = mapped_column(String(100))
+    tools_used: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"),)
+
+
+class AgentMemory(TenantEntity, Base):
+    __tablename__ = "agent_memory"
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    memory_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("tenant_id", "agent_name", "memory_type", "key"),)
+
+
+class ApprovalRequest(TenantEntity, Base):
+    __tablename__ = "approval_requests"
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    requesting_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))
+    action_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    target: Mapped[str | None] = mapped_column(String(255))
+    proposed_action: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    action_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    execution_result: Mapped[dict | None] = mapped_column(JSONB)
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key"),)
+
+
+class SyncJob(TenantEntity, Base):
+    __tablename__ = "sync_jobs"
+    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("integrations.id"), nullable=False)
+    sync_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    cursor: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    records_processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SyncCursor(TenantEntity, Base):
+    __tablename__ = "sync_cursors"
+    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("integrations.id"), nullable=False)
+    cursor_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    cursor_value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("tenant_id", "integration_id", "cursor_type"),)
+
+
+class DeadLetterEvent(TenantEntity, Base):
+    __tablename__ = "dead_letter_events"
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider_event_id: Mapped[str | None] = mapped_column(String(255))
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

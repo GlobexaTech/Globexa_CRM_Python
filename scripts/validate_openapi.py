@@ -16,6 +16,10 @@ def validate():
         "/api/v1/operations/analytics/{view}",
         "/api/v1/operations/search",
         "/api/v1/operations/customers/{kind}/{entity_id}",
+        "/api/v1/workforce/executions",
+        "/api/v1/workforce/approvals/{approval_id}/decision",
+        "/api/v1/workforce/memory",
+        "/api/v1/integrations/{integration_id}/configure",
     ]
     assert all(path in specification["paths"] for path in required)
     Path("evidence").mkdir(exist_ok=True)

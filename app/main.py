@@ -29,6 +29,7 @@ from app.api.v1.tasks import activities_router
 from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.ai import router as ai_router
+from app.api.v1.workforce import router as workforce_router
 
 # Lazy-load settings to avoid caching at import time
 def _get_settings():
@@ -96,6 +97,8 @@ app.add_middleware(
 
 # Tenant middleware
 app.add_middleware(TenantMiddleware, default_tenant_slug="globexatech" if _get_settings().app.debug else None)
+from app.middleware.body_limit import BodyLimitMiddleware
+app.add_middleware(BodyLimitMiddleware)
 
 
 # Exception handlers
@@ -182,6 +185,7 @@ app.include_router(activities_router, prefix="/api/v1")
 app.include_router(campaigns_router, prefix="/api/v1")
 app.include_router(integrations_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
+app.include_router(workforce_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")

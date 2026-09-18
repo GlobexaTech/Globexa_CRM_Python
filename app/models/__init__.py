@@ -228,6 +228,7 @@ class AuditLog(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("agent_executions.id"), nullable=True, index=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
@@ -286,14 +287,15 @@ class AIUsageLog(Base):
     task_type: Mapped[AITaskTypeEnum] = mapped_column(pg_enum(AITaskTypeEnum, "ai_task_type_enum"), nullable=False, index=True)
     provider: Mapped[AIProviderEnum] = mapped_column(pg_enum(AIProviderEnum, "ai_provider_enum"), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
-    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     estimated_cost_usd: Mapped[Optional[float]] = mapped_column(nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tool_actions: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("agent_executions.id"), nullable=True, index=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
@@ -795,6 +797,7 @@ class Activity(Base):
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ai_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     ai_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("agent_executions.id"), nullable=True, index=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
@@ -1887,10 +1890,10 @@ class ICPProfile(Base):
 # Register architectural foundations in the authoritative metadata registry.
 from app.models.foundation import (OAuthToken, DomainEvent, EventDelivery, WebhookReceipt,
     Workflow, Trigger, Condition, Action, ExecutionLog, Plan, Feature, PlanFeature,
-    Conversation, Message, AgentDefinition)
+    Conversation, Message, AgentDefinition, AgentExecution, AgentMemory, ApprovalRequest,
+    SyncJob, SyncCursor, DeadLetterEvent)
 
 # Existing entities retain their storage and API identities.
 Webhook = WebhookEndpoint
-SyncJob = IntegrationSyncLog
 from app.models.operations import (Participant, AnalyticsEvent, OperationJob, AIInsight,
                                    OAuthSession, WorkflowRevision)

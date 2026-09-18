@@ -15,7 +15,7 @@ from app.schemas.operations import (
 )
 from app.services.crm.common import owned, authorize, meter, enqueue, audit
 from app.core.events import publish_event
-from app.services.ai.gateway import AIGateway, CompatibleProvider, ModelRoute
+from app.services.ai.gateway import AIGateway, CompatibleProvider, OllamaProvider, ModelRoute
 
 CAPABILITIES = {
     "lead_score": (Lead, "ai:score_leads", ScoreOutput),
@@ -59,14 +59,17 @@ async def request_ai(db, tenant_id, actor_id, capability, entity_id, key):
 
 
 def build_gateway():
-    provider = os.environ.get("CRM_AI_PROVIDER", "")
+    provider = os.environ.get("CRM_AI_PROVIDER", "").strip().lower()
+    if provider == "local":
+        provider = "ollama"
     model = os.environ.get("CRM_AI_MODEL", "")
     endpoint = os.environ.get("CRM_AI_BASE_URL", "")
     key = os.environ.get("CRM_AI_API_KEY", "")
-    if not all((provider, model, endpoint, key)):
+    if not all((provider, model, endpoint)) or (provider != "ollama" and not key):
         raise RuntimeError("ai_not_configured")
+    selected = OllamaProvider(endpoint) if provider == "ollama" else CompatibleProvider(endpoint, key)
     return AIGateway(
-        {provider: CompatibleProvider(endpoint, key)}, [ModelRoute(provider, model)]
+        {provider: selected}, [ModelRoute(provider, model)]
     )
 
 

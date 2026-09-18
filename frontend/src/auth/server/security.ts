@@ -61,7 +61,7 @@ export function requireVersion(actual: string, expected: string | null) {
   if (!expected || actual !== expected) throw new SessionError(409, "workspace_changed", "Your workspace changed. Reload this view before continuing.");
 }
 
-const allowedRoots = new Set(["leads", "contacts", "companies", "deals", "tasks", "notes", "activities", "campaigns", "integrations", "operations", "foundation", "users", "tenants"]);
+const allowedRoots = new Set(["leads", "contacts", "companies", "deals", "tasks", "notes", "activities", "campaigns", "integrations", "operations", "foundation", "users", "tenants", "workforce"]);
 
 /** No arbitrary hosts, auth token endpoints, traversal, encoded separators or forwarded headers. */
 export function allowedApiPath(segments: string[], search = "") {

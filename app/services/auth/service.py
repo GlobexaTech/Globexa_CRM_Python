@@ -10,7 +10,6 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from authlib.integrations.starlette_client import OAuth
-from authlib.oauth2.rfc7523 import PrivateKeyJWT
 import httpx
 
 from app.core.config import get_settings
@@ -19,7 +18,6 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    generate_secure_token,
     hash_password,
     verify_password,
 )
@@ -301,14 +299,15 @@ class AuthService:
 
         return user, tenant
 
-    async def create_tokens(self, user: User, tenant_id: UUID) -> dict:
+    async def create_tokens(self, user: User, tenant_id: UUID, *, session_id=None, session_expiry=None) -> dict:
         """Create access and refresh tokens for user in a tenant."""
         await bind_context(self.db, user_id=user.id)
         # Verify membership
         result = await self.db.execute(
-            select(Membership).where(
+            select(Membership).join(Tenant, Tenant.id == Membership.tenant_id).where(
                 Membership.user_id == user.id,
                 Membership.tenant_id == tenant_id,
+                Tenant.is_active.is_(True),
             )
         )
         membership = result.scalar_one_or_none()
@@ -322,6 +321,8 @@ class AuthService:
             "tenant_id": str(tenant_id),
             "role": membership.role.value,
             "email": user.email,
+            "sid": session_id or uuid4().hex,
+            "session_exp": session_expiry or int((datetime.now(timezone.utc) + timedelta(days=settings.security.refresh_token_expire_days)).timestamp()),
         }
 
         access_token = create_access_token(token_data)
@@ -331,7 +332,8 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",  # nosec B105
-            "expires_in": settings.security.access_token_expire_minutes * 60,
+            "expires_in": max(0, min(settings.security.access_token_expire_minutes * 60,
+                                     token_data["session_exp"] - int(datetime.now(timezone.utc).timestamp()))),
         }
 
     async def refresh_tokens(self, refresh_token: str) -> Optional[dict]:
@@ -339,12 +341,16 @@ class AuthService:
         payload = decode_token(refresh_token)
         if not payload or payload.get("type") != "refresh":
             return None
+        from app.core.token_sessions import session_active, consume_refresh
+        if not await session_active(payload):
+            return None
 
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
 
         try:
-            await bind_context(self.db, user_id=UUID(str(user_id)))
+            user_id, tenant_id = UUID(str(user_id)), UUID(str(tenant_id))
+            await bind_context(self.db, user_id=user_id)
         except (ValueError, TypeError):
             return None
 
@@ -358,21 +364,29 @@ class AuthService:
 
         # Verify membership still valid
         result = await self.db.execute(
-            select(Membership).where(
+            select(Membership).join(Tenant, Tenant.id == Membership.tenant_id).where(
                 Membership.user_id == user_id,
                 Membership.tenant_id == tenant_id,
+                Tenant.is_active.is_(True),
             )
         )
         membership = result.scalar_one_or_none()
         if not membership:
             return None
 
-        return await self.create_tokens(user, UUID(tenant_id))
+        if not await consume_refresh(payload):
+            return None
+        tokens = await self.create_tokens(user, tenant_id, session_id=payload["sid"], session_expiry=payload["session_exp"])
+        # A simultaneous replay may have revoked the family after the atomic claim.
+        return tokens if await session_active(payload) else None
 
     async def get_current_user(self, token: str) -> Optional[Tuple[User, Membership]]:
         """Get current user and membership from access token."""
         payload = decode_token(token)
         if not payload or payload.get("type") != "access":
+            return None
+        from app.core.token_sessions import session_active
+        if not await session_active(payload):
             return None
 
         user_id = payload.get("sub")

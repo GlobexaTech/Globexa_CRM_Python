@@ -4,6 +4,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import { Dialog } from "@/components/Dialog";
 import { ResourceState } from "@/components/ResourceState";
+import { CustomerWorkforce } from "@/components/CustomerWorkforce";
 import { useResource } from "@/hooks/useResource";
 import { useAction } from "@/hooks/useAction";
 import { useSession } from "@/auth/SessionProvider";
@@ -147,6 +148,13 @@ export default function CustomerProfile({
                     </p>
                   )}
                 </div>
+                {can("ai:chat") &&
+                  (kind === "leads" || kind === "contacts") && (
+                    <CustomerWorkforce
+                      kind={kind === "leads" ? "lead" : "contact"}
+                      id={id}
+                    />
+                  )}
                 {data.restricted_sections.length > 0 && (
                   <p
                     role="status"
@@ -374,6 +382,11 @@ function RecordItem({
       {(record.content || record.body || record.description) && (
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">
           {record.content || record.body || record.description}
+        </p>
+      )}
+      {typeof record.provider_message_id === "string" && (
+        <p className="mt-2 break-all text-xs text-[var(--muted)]">
+          Provider message ID: {record.provider_message_id}
         </p>
       )}
       {record.output && (

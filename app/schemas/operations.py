@@ -1,7 +1,7 @@
 """Stable, bounded request and response contracts for CRM operations."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import (
     BaseModel,
@@ -71,7 +71,7 @@ class Attachment(StrictModel):
 
 class MessageInput(StrictModel):
     body: str = Field(min_length=1, max_length=100_000)
-    recipient: EmailStr
+    recipient: EmailStr | Annotated[str, Field(pattern=r"^\+[1-9][0-9]{6,14}$")]
     attachments: list[Attachment] = Field(default_factory=list, max_length=10)
 
 

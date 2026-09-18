@@ -67,7 +67,11 @@ $$;
 
 
 def upgrade() -> None:
-    op.execute(_RLS_SQL)
+    # asyncpg prepares one SQL statement at a time. Keep PL/pgSQL bodies intact
+    # while executing the function and the policy block separately.
+    function_sql, policy_sql = _RLS_SQL.split("\nDO $$", 1)
+    op.execute(function_sql)
+    op.execute("DO $$" + policy_sql)
 
 
 def downgrade() -> None:

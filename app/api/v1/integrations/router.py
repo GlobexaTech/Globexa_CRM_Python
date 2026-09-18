@@ -1,4 +1,4 @@
-from sqlalchemy import update
+from sqlalchemy import update, delete
 from datetime import timedelta
 """
 Integration API routes for Globexa CRM.
@@ -17,12 +17,24 @@ from app.schemas import PaginationParams, PaginatedResponse
 from app.models import (
     Integration, IntegrationCredential, WebhookEndpoint, IntegrationSyncLog,
     LeadSourceConfig, Touchpoint, AttributionRule, RevenueAttribution,
-    User, IntegrationTypeEnum, IntegrationStatusEnum, SyncStatusEnum
+    User, IntegrationTypeEnum, IntegrationStatusEnum, SyncStatusEnum, OAuthSession
 )
-from app.services.integration.adapter import IntegrationService
+from app.services.crm.providers import adapter_for, provider_state, adapters
+from app.schemas.provider_credentials import validate_credential_write
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
-integration_service = IntegrationService()
+
+PROVIDER_CONFIG_FIELDS = {"provider", "phone_number_id", "business_account_id", "page_id", "form_id", "customer_id"}
+
+
+def validate_provider_config(config):
+    if not isinstance(config, dict) or set(config) - PROVIDER_CONFIG_FIELDS:
+        raise HTTPException(422, "Unsupported provider configuration field; use encrypted credentials for secrets")
+    if any(not isinstance(value, str) or len(value) > 255 for value in config.values()):
+        raise HTTPException(422, "Provider configuration values must be bounded strings")
+    if config.get("provider") and config["provider"] not in adapters:
+        raise HTTPException(422, "Unsupported provider")
+
 
 
 # =============================================================================
@@ -45,6 +57,16 @@ async def create_integration(
     if not data.get("type") or not data.get("name"):
         raise HTTPException(status_code=400, detail="type and name are required")
 
+    config = data.get("config", {})
+    validate_provider_config(config)
+    if not isinstance(config, dict) or any(any(word in key.lower() for word in ("secret", "token", "password", "api_key")) for key in config):
+        raise HTTPException(422, "Store credentials in the encrypted credential endpoint")
+    if data.get("type") not in {v.value for v in IntegrationTypeEnum}:
+        raise HTTPException(422, "Unsupported integration type")
+    if config.get("provider") and config["provider"] not in adapters:
+        raise HTTPException(422, "Unsupported provider")
+    if not isinstance(data["name"], str) or not 1 <= len(data["name"]) <= 255:
+        raise HTTPException(422, "Invalid integration name")
     # Check uniqueness
     result = await db.execute(
         select(Integration).where(
@@ -92,8 +114,12 @@ async def list_integrations(
     )
 
     if type:
+        if type not in {value.value for value in IntegrationTypeEnum}:
+            raise HTTPException(422, "Unsupported integration type")
         query = query.where(Integration.type == type)
     if status:
+        if status not in {value.value for value in IntegrationStatusEnum}:
+            raise HTTPException(422, "Unsupported integration status")
         query = query.where(Integration.status == status)
 
     query = query.order_by(Integration.created_at.desc())
@@ -113,6 +139,9 @@ async def list_integrations(
             "name": i.name,
             "description": i.description,
             "status": i.status.value,
+            "provider": (i.config or {}).get("provider", i.type.value),
+            "provider_state": provider_state(i),
+            "capabilities": sorted(adapters.get((i.config or {}).get("provider", i.type.value), adapters["linkedin"]).capabilities) if (i.config or {}).get("provider", i.type.value) in adapters else [],
             "sync_enabled": i.sync_enabled,
             "sync_frequency_minutes": i.sync_frequency_minutes,
             "last_sync_at": i.last_sync_at,
@@ -154,6 +183,9 @@ async def get_integration(
         "name": integration.name,
         "description": integration.description,
         "status": integration.status.value,
+        "provider": (integration.config or {}).get("provider", integration.type.value),
+        "provider_state": provider_state(integration),
+        "capabilities": sorted(adapter_for(integration).capabilities) if (integration.config or {}).get("provider", integration.type.value) in adapters else [],
         "config": integration.config,
         "sync_enabled": integration.sync_enabled,
         "sync_frequency_minutes": integration.sync_frequency_minutes,
@@ -204,12 +236,24 @@ async def update_integration(
     user, _ = current_user
 
     result = await db.execute(
-        select(Integration).where(Integration.id == integration_id, Integration.tenant_id == tenant_id)
+        select(Integration).where(Integration.id == integration_id, Integration.tenant_id == tenant_id).with_for_update()
     )
     integration = result.scalar_one_or_none()
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    if "config" in data:
+        cfg = data["config"]
+        validate_provider_config(cfg)
+        if not isinstance(cfg, dict) or any(any(word in key.lower() for word in ("secret", "token", "password", "api_key")) for key in cfg):
+            raise HTTPException(422, "Store credentials in the encrypted credential endpoint")
+        if cfg.get("provider") not in adapters:
+            raise HTTPException(422, "Unsupported provider")
+        if integration.status == IntegrationStatusEnum.CONNECTED and cfg != integration.config:
+            raise HTTPException(409, "Disconnect before changing provider configuration")
+        if cfg != integration.config:
+            await db.execute(delete(OAuthSession).where(OAuthSession.tenant_id == tenant_id,
+                             OAuthSession.integration_id == integration_id))
     update_data = data.copy()
     update_data.pop("id", None)
     update_data.pop("tenant_id", None)
@@ -260,6 +304,7 @@ async def create_credential(
 ):
     """Add credential to integration."""
     user, _ = current_user
+    data = validate_credential_write(data, creating=True)
 
     # Verify integration
     result = await db.execute(
@@ -269,6 +314,8 @@ async def create_credential(
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
 
+    if not isinstance(data.get("name"), str) or not 1 <= len(data["name"]) <= 255:
+        raise HTTPException(422, "Credential name required")
     # Check uniqueness
     result = await db.execute(
         select(IntegrationCredential).where(
@@ -281,7 +328,11 @@ async def create_credential(
 
     # EncryptedText routes this through CredentialService at the database boundary.
     import json
+    if not isinstance(data.get("name"), str) or not 1 <= len(data["name"]) <= 255:
+        raise HTTPException(422, "Credential name required")
     credentials_encrypted = json.dumps(data.get("credentials", {}))
+    if len(credentials_encrypted) > 16000:
+        raise HTTPException(422, "Credential too large")
 
     credential = IntegrationCredential(
         tenant_id=tenant_id,
@@ -298,8 +349,8 @@ async def create_credential(
     )
     db.add(credential)
 
-    # Update integration status
-    integration.status = IntegrationStatusEnum.CONNECTED
+    # Storing bytes is not proof of provider connectivity.
+    integration.status = IntegrationStatusEnum.PENDING
     await db.commit()
     await db.refresh(credential)
 
@@ -344,6 +395,7 @@ async def update_credential(
 ):
     """Update credential."""
     user, _ = current_user
+    data = validate_credential_write(data)
 
     result = await db.execute(
         select(IntegrationCredential).where(
@@ -366,6 +418,10 @@ async def update_credential(
         if field in ['access_token', 'is_active', 'name', 'refresh_token', 'scopes', 'token_expires_at', 'token_type']:
             setattr(credential, field, value)
 
+    if {"credentials", "access_token", "refresh_token", "token_expires_at", "is_active"} & set(data):
+        integration = await owned(db, Integration, tenant_id, credential.integration_id, True)
+        integration.status = IntegrationStatusEnum.PENDING
+        credential.last_validated_at = None
     credential.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
@@ -523,6 +579,15 @@ async def create_webhook(
     if not isinstance(secret, str) or len(secret) < 32:
         raise HTTPException(422, "A provider signing secret of at least 32 characters is required")
 
+    import hashlib
+    custom_fields = dict(data.get("custom_fields", {}))
+    custom_fields.pop("verify_token", None)
+    if data.get("verify_token"):
+        if not isinstance(data["verify_token"], str) or not 32 <= len(data["verify_token"]) <= 256:
+            raise HTTPException(422, "Verify token must contain 32 to 256 characters")
+        custom_fields["verify_token_hash"] = hashlib.sha256(data["verify_token"].encode()).hexdigest()
+    if not 1 <= data.get("max_retries", 3) <= 5 or not 1 <= data.get("rate_limit_per_minute", 100) <= 1000:
+        raise HTTPException(422, "Invalid webhook limits")
     webhook = WebhookEndpoint(
         tenant_id=tenant_id,
         integration_id=integration_id,
@@ -534,7 +599,7 @@ async def create_webhook(
         retry_enabled=data.get("retry_enabled", True),
         max_retries=data.get("max_retries", 3),
         rate_limit_per_minute=data.get("rate_limit_per_minute", 100),
-        custom_fields=data.get("custom_fields", {}),
+        custom_fields=custom_fields,
     )
     db.add(webhook)
     await db.commit()
@@ -622,19 +687,9 @@ async def delete_webhook(
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
 
-    # Remove from provider if integration has credentials
-    if webhook.integration_id:
-        integration_result = await db.execute(
-            select(Integration).where(Integration.id == webhook.integration_id)
-        )
-        integration = integration_result.scalar_one_or_none()
-        if integration and integration.credentials:
-            cred = integration.credentials[0]
-            import json
-            credentials = json.loads(cred.credentials_encrypted)
-            await integration_service.remove_webhook(integration.type.value, credentials, str(webhook_id))
-
-    await db.delete(webhook)
+    # Deactivate locally; immutable receipts retain their endpoint relationship.
+    # A local endpoint UUID is not a provider subscription ID.
+    webhook.is_active = False
     await db.commit()
 
 
@@ -1204,3 +1259,136 @@ async def calculate_attribution(
         "by_medium": by_medium,
         "by_campaign": by_campaign,
     }
+
+# Checkpoint 5 provider operational surfaces; no secret or provider cursor is returned.
+from pydantic import BaseModel, ConfigDict, Field
+from app.models import SyncJob, WebhookReceipt, Contact
+from app.services.crm.common import owned, authorize, audit, now
+
+
+class ConfigureProviderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    credential_id: UUID
+
+
+@router.post("/{integration_id}/configure", response_model=dict)
+async def configure_provider(integration_id: UUID, data: ConfigureProviderInput,
+                             current_user: tuple = Depends(require_integrations_write),
+                             db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    import json
+    integration = await owned(db, Integration, tenant_id, integration_id, True)
+    adapter = adapter_for(integration)
+    if "configure" not in adapter.capabilities:
+        raise HTTPException(501, "This provider requires OAuth")
+    credential = await owned(db, IntegrationCredential, tenant_id, data.credential_id, True)
+    if credential.integration_id != integration.id or not credential.is_active:
+        raise HTTPException(404, "Credential not found")
+    values = json.loads(credential.credentials_encrypted)
+    token = credential.access_token or values.get("access_token") or values.get("api_key")
+    if not isinstance(token, str) or not token:
+        raise HTTPException(422, "Access credential required")
+    result = await adapter.health_check(token)
+    if result.get("connected") is not True:
+        raise HTTPException(409, "Provider health check failed")
+    integration.status = IntegrationStatusEnum.CONNECTED
+    await db.execute(update(IntegrationCredential).where(IntegrationCredential.tenant_id == tenant_id,
+        IntegrationCredential.integration_id == integration.id, IntegrationCredential.id != credential.id).values(is_active=False))
+    credential.last_validated_at, credential.validation_error = now(), None
+    audit(db, tenant_id, current_user[0].id, "integration.connected", "integration", integration.id)
+    await db.commit()
+    return {"id": integration.id, "status": "connected", "provider_state": "connected", **result}
+
+
+@router.get("/{integration_id}/sync-jobs", response_model=list[dict])
+async def list_provider_sync_jobs(integration_id: UUID, limit: int = Query(50, ge=1, le=100),
+                                  current_user: tuple = Depends(require_integrations_read),
+                                  db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    await owned(db, Integration, tenant_id, integration_id)
+    rows = (await db.scalars(select(SyncJob).where(SyncJob.tenant_id == tenant_id, SyncJob.integration_id == integration_id)
+                             .order_by(SyncJob.created_at.desc()).limit(limit))).all()
+    return [{key: getattr(row, key) for key in ("id", "integration_id", "sync_type", "status", "records_processed", "records_created", "records_updated", "records_failed", "started_at", "finished_at")} | {"error_code": row.error_message} for row in rows]
+
+
+@router.post("/sync-jobs/{sync_id}/cancel", response_model=dict)
+async def cancel_provider_sync(sync_id: UUID, current_user: tuple = Depends(require_integrations_write),
+                               db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    row = await owned(db, SyncJob, tenant_id, sync_id, True)
+    if row.status not in {"pending", "running", "partial"}:
+        raise HTTPException(409, "Sync is already terminal")
+    row.status, row.finished_at = "cancelled", now()
+    audit(db, tenant_id, current_user[0].id, "integration.sync_cancelled", "sync_job", row.id)
+    await db.commit()
+    return {"id": row.id, "status": row.status}
+
+
+@router.get("/{integration_id}/webhook-receipts", response_model=list[dict])
+async def list_provider_receipts(integration_id: UUID, limit: int = Query(50, ge=1, le=100),
+                                 current_user: tuple = Depends(require_integrations_read),
+                                 db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    await owned(db, Integration, tenant_id, integration_id)
+    rows = (await db.scalars(select(WebhookReceipt).join(WebhookEndpoint, WebhookEndpoint.id == WebhookReceipt.webhook_id)
+                             .where(WebhookReceipt.tenant_id == tenant_id, WebhookEndpoint.integration_id == integration_id)
+                             .order_by(WebhookReceipt.created_at.desc()).limit(limit))).all()
+    return [{key: getattr(row, key) for key in ("id", "state", "attempts", "error_code", "created_at", "processed_at")} for row in rows]
+
+
+class EnrichmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    contact_id: UUID | None = None
+    lead_id: UUID | None = None
+
+
+@router.post("/{integration_id}/enrich", response_model=dict)
+async def enrich_contact(integration_id: UUID, data: EnrichmentInput,
+                         current_user: tuple = Depends(require_integrations_write),
+                         db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    from app.services.crm.integrations import access_token
+    await authorize(db, tenant_id, current_user[0].id, "contacts:write")
+    if bool(data.contact_id) == bool(data.lead_id):
+        raise HTTPException(422, "Choose exactly one contact or lead")
+    lead = None
+    contact_id = data.contact_id
+    if data.lead_id:
+        from app.models import Lead
+        await authorize(db, tenant_id, current_user[0].id, "leads:write")
+        lead = await owned(db, Lead, tenant_id, data.lead_id, True)
+        contact_id = lead.contact_id
+        if not contact_id:
+            raise HTTPException(422, "Lead requires a linked contact with email")
+    integration = await owned(db, Integration, tenant_id, integration_id, True)
+    contact = await owned(db, Contact, tenant_id, contact_id, True)
+    adapter = adapter_for(integration)
+    if "enrich" not in adapter.capabilities:
+        raise HTTPException(501, "Provider enrichment unavailable")
+    if not contact.email:
+        raise HTTPException(422, "Contact email required")
+    result = await adapter.enrich(await access_token(db, tenant_id, integration), {"email": contact.email})
+    # Enrichment is provenance-tagged supplemental data, never an unreviewed identity merge.
+    contact.custom_fields = {**(contact.custom_fields or {}), "enrichment": result}
+    audit(db, tenant_id, current_user[0].id, "contact.enriched", "contact", contact.id)
+    if lead:
+        lead.custom_fields = {**(lead.custom_fields or {}), "enrichment": result}
+        audit(db, tenant_id, current_user[0].id, "lead.enriched", "lead", lead.id)
+    await db.commit()
+    return result
+
+
+@router.post("/{integration_id}/sync-reset", response_model=dict)
+async def reset_provider_sync(integration_id: UUID, current_user: tuple = Depends(require_integrations_write),
+                              db: AsyncSession = Depends(get_db), tenant_id: UUID = Depends(get_tenant_id)):
+    from app.models import SyncCursor, OperationJob
+    from sqlalchemy import delete
+    from app.services.crm.common import serial_key
+    integration = await owned(db, Integration, tenant_id, integration_id, True)
+    if "sync" not in adapter_for(integration).capabilities:
+        raise HTTPException(501, "Provider sync unavailable")
+    await serial_key(db, tenant_id, "sync:" + str(integration_id))
+    active = await db.scalar(select(OperationJob.id).where(OperationJob.tenant_id == tenant_id,
+        OperationJob.kind == "sync", OperationJob.payload["integration_id"].astext == str(integration_id),
+        OperationJob.status.in_(["pending", "retry", "running"])).limit(1))
+    if active:
+        raise HTTPException(409, "Cancel or finish the current sync before resetting")
+    await db.execute(delete(SyncCursor).where(SyncCursor.tenant_id == tenant_id, SyncCursor.integration_id == integration_id))
+    audit(db, tenant_id, current_user[0].id, "integration.sync_reset", "integration", integration_id)
+    await db.commit()
+    return {"id": integration_id, "next_sync_type": "initial"}

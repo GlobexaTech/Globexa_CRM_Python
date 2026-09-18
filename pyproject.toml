@@ -69,9 +69,11 @@ dev-dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-select = ["E", "F", "I", "W", "UP", "B", "C4", "ANN", "ARG", "PTH", "PD", "Q", "T20", "SIM", "TCH", "TRY", "DTZ", "ERA", "EXE", "ISC", "ICN", "LOG", "PERL", "PIE", "PL", "RSE", "RET", "SLF", "SLOT", "T10", "TID", "UN", "RUF"]
-ignore = ["ANN101", "ANN102", "ANN201", "ANN202", "ANN204", "ARG001", "ARG002", "B008", "C408", "PTH123", "S101", "S113", "T201", "T203"]
-fixable = ["E", "F", "I", "W", "UP", "B", "C4", "ANN", "ARG", "PTH", "PD", "Q", "T20", "SIM", "TCH", "TRY", "DTZ", "ERA", "EXE", "ISC", "ICN", "LOG", "PERL", "PIE", "PL", "RSE", "RET", "SLF", "SLOT", "T10", "TID", "UN", "RUF"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4", "ANN", "ARG", "PTH", "PD", "Q", "T20", "SIM", "TCH", "TRY", "DTZ", "ERA", "EXE", "ISC", "ICN", "LOG", "PIE", "PL", "RSE", "RET", "SLF", "SLOT", "T10", "TID", "RUF"]
+ignore = ["ANN201", "ANN202", "ANN204", "ARG001", "ARG002", "B008", "C408", "PTH123", "S101", "S113", "T201", "T203"]
+fixable = ["E", "F", "I", "W", "UP", "B", "C4", "ANN", "ARG", "PTH", "PD", "Q", "T20", "SIM", "TCH", "TRY", "DTZ", "ERA", "EXE", "ISC", "ICN", "LOG", "PIE", "PL", "RSE", "RET", "SLF", "SLOT", "T10", "TID", "RUF"]
 per-file-ignores = { "tests/*" = ["S101", "S113", "ARG001"] }
 
 [tool.mypy]

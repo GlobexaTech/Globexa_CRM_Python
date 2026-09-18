@@ -63,8 +63,8 @@ function AIWorkspace({ can }: { can: (permission: string) => boolean }) {
             <h2 className="font-semibold">Reviewable CRM assistance</h2>
             <p className="mt-1 text-sm">
               Six controlled capabilities run through the backend AI Gateway.
-              Suggestions and drafts do not send email or move deals. Autonomous
-              workforce management is not available in this release.
+              Suggestions and drafts do not send email or move deals. Use AI
+              Workforce for bounded agent tasks and Approval Center to review actions.
             </p>
           </div>
         </div>

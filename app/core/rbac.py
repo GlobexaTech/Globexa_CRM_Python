@@ -333,5 +333,13 @@ ROLE_PERMISSIONS[RoleEnum.SALES_MANAGER].update({"analytics:read", "automation:r
 ROLE_PERMISSIONS[RoleEnum.MARKETING].update({"conversations:read", "conversations:write", "conversations:send", "analytics:read", "notes:read"})
 ROLE_PERMISSIONS[RoleEnum.VIEWER].add("notes:read")
 
+# Approval authority belongs to human reviewers and never to AI service accounts.
+ALL_PERMISSIONS.extend(["ai:approve", "ai:memory"])
+for role in (RoleEnum.OWNER, RoleEnum.ADMIN, RoleEnum.SALES_MANAGER):
+    ROLE_PERMISSIONS[role].add("ai:approve")
+for role, permissions in ROLE_PERMISSIONS.items():
+    if "ai:chat" in permissions and role != RoleEnum.AI_AGENT:
+        permissions.add("ai:memory")
+
 def may_assign_role(actor, target):
     return actor == RoleEnum.OWNER or (actor == RoleEnum.ADMIN and target not in {RoleEnum.OWNER, RoleEnum.ADMIN})

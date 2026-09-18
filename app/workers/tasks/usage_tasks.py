@@ -15,12 +15,19 @@ logger = structlog.get_logger()
 
 @shared_task
 def aggregate_daily_usage(tenant_id: str):
-    """Aggregate daily usage metrics for all tenants."""
-    logger.info("Aggregating daily usage")
-    # This runs daily at 1 AM
-    # TODO: Calculate daily totals for emails, AI credits, contacts, etc.
-    # Store in usage_records with period_start/period_end
-    return {"status": "completed"}
+    """Read this tenant's measured daily totals without duplicating ledger entries."""
+    import asyncio
+    from uuid import UUID
+
+    async def aggregate():
+        async with tenant_db_context(tenant_id) as db:
+            start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            rows = (await db.execute(select(UsageRecord.metric, func.sum(UsageRecord.quantity))
+                    .where(UsageRecord.tenant_id == UUID(tenant_id), UsageRecord.created_at >= start)
+                    .group_by(UsageRecord.metric))).all()
+            return {"status": "completed", "period_start": start.isoformat(),
+                    "totals": {metric: quantity for metric, quantity in rows}}
+    return asyncio.run(aggregate())
 
 
 @shared_task
@@ -98,22 +105,8 @@ def check_subscription_status(tenant_id: str):
 
 @shared_task
 def cleanup_old_audit_logs(tenant_id: str):
-    """Clean up audit logs older than retention period (1 year)."""
-    logger.info("Cleaning up old audit logs")
-    
-    async def _cleanup():
-        async with tenant_db_context(tenant_id) as db:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=365)
-            result = await db.execute(
-                delete(AuditLog).where(AuditLog.created_at < cutoff)
-            )
-            deleted = result.rowcount
-            await db.commit()
-            logger.info("Deleted old audit logs", count=deleted)
-    
-    import asyncio
-    asyncio.run(_cleanup())
-    return {"status": "completed"}
+    """The application role cannot delete immutable audit records."""
+    raise ValueError("Audit retention requires an approved administrator archival procedure")
 
 
 @shared_task

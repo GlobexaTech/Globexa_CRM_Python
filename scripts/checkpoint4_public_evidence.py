@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,12 +17,13 @@ DESTINATION = EVIDENCE / "public-artifact"
 PUBLIC_FILES = {
     "backend.xml", "backend.txt", "migrations.txt", "ruff.txt", "bandit.json",
     "pip-audit.json", "openapi.txt", "eslint.txt", "typecheck.txt", "build.txt",
-    "npm-audit.json", "frontend-unit.txt", "auth-unit.txt", "frontend-e2e.txt", "gitleaks.json",
+    "npm-audit.json", "frontend-unit.txt", "auth-unit.txt", "frontend-e2e.txt", "gitleaks.json", "gitleaks-history.json",
+    "gitleaks-history-triage.json",
 }
 AUDIT_SCREENSHOT = re.compile(
     r"(?:dashboard|leads|contacts|companies|pipeline|tasks|conversations|campaigns|"
     r"automations|integrations|ai-agents|analytics|search|settings|help|customers|"
-    r"lead-drawer)-(?:1440|1280|768|390)\.png$"
+    r"lead-drawer|workforce-ai-workforce|workforce-supervisor|workforce-approvals)-(?:1440|1280|768|390)\.png$"
 )
 SECRET_NAME = re.compile(r"(?:KEY|SECRET|PASSWORD|TOKEN)$", re.IGNORECASE)
 JWT = re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])")
@@ -80,16 +82,28 @@ def audit_screenshot(relative):
     # login/private form even when their spec name is not auth.spec.ts.
     return (
         len(relative.parts) == 2
-        and relative.parts[0].startswith("accessibility-")
+        and (relative.parts[0].startswith("accessibility-") or relative.parts[0].startswith("workforce-workforce-routes-"))
         and bool(AUDIT_SCREENSHOT.fullmatch(relative.name))
     )
 
 
+def reset_public_destination(destination: Path, evidence: Path) -> None:
+    resolved = destination.resolve()
+    evidence_root = evidence.resolve()
+    if (destination.is_symlink() or resolved != evidence_root / "public-artifact"
+            or not resolved.is_relative_to(evidence_root)):
+        raise RuntimeError("Public evidence destination must remain inside evidence")
+    # This is a generated output directory, never a source of evidence. Verify
+    # its absolute containment before recursive removal, so an earlier PASS or
+    # unallowlisted private file cannot survive a subsequent sanitizer run.
+    if destination.exists():
+        shutil.rmtree(resolved)
+    destination.mkdir(parents=True)
+
+
 def main():
     secrets = sensitive_values()
-    if DESTINATION.is_symlink() or not DESTINATION.resolve().is_relative_to(EVIDENCE.resolve()):
-        raise RuntimeError("Public evidence destination must remain inside evidence")
-    DESTINATION.mkdir(parents=True, exist_ok=True)
+    reset_public_destination(DESTINATION, EVIDENCE)
     copied = []
     for name in sorted(PUBLIC_FILES):
         source = EVIDENCE / "public" / name

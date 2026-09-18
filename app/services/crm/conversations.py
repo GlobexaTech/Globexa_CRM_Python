@@ -66,10 +66,24 @@ async def suppressed(db, tenant_id, email, contact=None):
 async def queue_message(db, tenant_id, actor_id, conversation_id, data, key):
     await authorize(db, tenant_id, actor_id, "conversations:send")
     row = await owned(db, Conversation, tenant_id, conversation_id, True)
-    if row.channel != "email" or not row.integration_id:
+    if row.channel not in {"email", "whatsapp"} or not row.integration_id:
         raise HTTPException(
-            501, "Configure a supported email integration before sending"
+            501, "Configure a supported messaging integration before sending"
         )
+    from app.services.crm.providers import adapter_for
+    import re
+    integration = await owned(db, Integration, tenant_id, row.integration_id)
+    adapter = adapter_for(integration)
+    if "send" not in adapter.capabilities:
+        raise HTTPException(501, "Provider does not support outbound messages")
+    if row.channel == "email" and "@" not in str(data.recipient):
+        raise HTTPException(422, "Email recipient required")
+    if row.channel == "whatsapp" and not re.fullmatch(r"\+[1-9][0-9]{6,14}", str(data.recipient)):
+        raise HTTPException(422, "International phone number required")
+    if row.channel == "whatsapp":
+        if adapter.name != "whatsapp":
+            raise HTTPException(422, "WhatsApp conversation requires a WhatsApp integration")
+        await validate_whatsapp_send(db, tenant_id, row, str(data.recipient))
     if data.attachments:
         raise HTTPException(
             422,
@@ -131,21 +145,20 @@ async def ingest_message(db, tenant_id, integration, item):
             Conversation.provider_thread_id == item["thread_id"],
         )
     )
-    contact = await db.scalar(
-        select(Contact)
-        .where(
-            Contact.tenant_id == tenant_id,
-            func.lower(Contact.email) == item.get("sender", "").lower(),
-        )
-        .order_by(Contact.id)
-        .limit(1)
-    )
+    from app.services.crm.provider_pipeline import match_contact
+    match = await match_contact(db, tenant_id, integration.id, {
+        "provider_contact_id": item.get("provider_contact_id"), "email": item.get("sender"),
+        "email_verified": item.get("email_verified", False), "phone": item.get("sender"),
+        "phone_verified": item.get("phone_verified", False),
+    }, conversation.contact_id if conversation else None)
+    contact = match["contact"]
     if not conversation:
         conversation = Conversation(
             tenant_id=tenant_id,
             integration_id=integration.id,
             provider_thread_id=item["thread_id"],
             subject=item.get("subject", "(no subject)")[:255],
+            channel=item.get("channel", "email"),
             contact_id=contact.id if contact else None,
             company_id=contact.company_id if contact else None,
         )
@@ -194,3 +207,22 @@ async def ingest_message(db, tenant_id, integration, item):
                 )
             )
     return message
+
+
+async def validate_whatsapp_send(db, tenant_id, conversation, recipient):
+    """Enforce the recipient-specific customer-service window at queue AND send."""
+    from datetime import timedelta
+    from app.services.crm.common import now
+    if conversation.provider_thread_id != recipient:
+        raise HTTPException(409, "Recipient must match this WhatsApp conversation")
+    latest = await db.scalar(select(func.max(Message.occurred_at)).where(
+        Message.tenant_id == tenant_id, Message.conversation_id == conversation.id,
+        Message.direction == "inbound", Message.sender == recipient))
+    if latest is None or latest < now() - timedelta(hours=24):
+        raise HTTPException(409, "WhatsApp customer service window is closed; an approved template is required")
+    blocked = await db.scalar(select(Contact.id).where(Contact.tenant_id == tenant_id,
+        (func.regexp_replace(Contact.phone, r"[^0-9]", "", "g") == recipient.lstrip("+")) |
+        (func.regexp_replace(Contact.mobile, r"[^0-9]", "", "g") == recipient.lstrip("+")),
+        (Contact.do_not_contact.is_(True)) | (Contact.sms_opted_out.is_(True))).limit(1))
+    if blocked:
+        raise HTTPException(409, "Recipient has opted out")

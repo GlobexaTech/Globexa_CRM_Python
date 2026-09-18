@@ -29,6 +29,9 @@ JOB_PERMISSIONS = {
     "sync": "integrations:write",
     "ai": "ai:chat",
     "automation": "automation:write",
+    "provider_webhook": "integrations:webhooks",
+    "workforce": "ai:chat",
+    "workforce_approval": "ai:chat",
 }
 
 
@@ -51,8 +54,17 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
     if job.status == "running":
         if job.claimed_at and job.claimed_at > now() - timedelta(minutes=5):
             return
-        if job.kind in {"campaign_send", "message_send", "ai"}:
+        if job.kind in {"campaign_send", "message_send", "ai", "workforce"}:
             job.status, job.error_code = "unknown", "worker_lost_after_external_claim"
+            if job.kind == "workforce":
+                from app.models import AgentExecution
+                execution = await owned(db, AgentExecution, tenant_id, UUID(job.payload["execution_id"]))
+                execution.state, execution.error_message, execution.failed_at = "failed", "worker_lost_after_external_claim", now()
+            if job.kind == "message_send":
+                message = await db.scalar(select(Message).where(Message.tenant_id == tenant_id,
+                    Message.idempotency_key == "job:" + str(job.id)))
+                if message:
+                    message.status = "unknown"
             await db.commit()
             return
     if job.kind not in JOB_PERMISSIONS:
@@ -121,6 +133,10 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
             db, tenant_id, job.payload["recipient"]
         ):
             raise ProviderFailure("recipient_suppressed")
+        if job.kind == "message_send" and getattr(adapter, "name", None) == "whatsapp":
+            from app.services.crm.conversations import validate_whatsapp_send
+            conversation = await owned(db, Conversation, tenant_id, UUID(job.payload["conversation_id"]))
+            await validate_whatsapp_send(db, tenant_id, conversation, job.payload["recipient"])
         job.attempts += 1
         if job.kind in {"sync", "campaign_send"} and not job.result.get("metered"):
             await meter(
@@ -130,14 +146,60 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
                 "integrations" if job.kind == "sync" else "messages",
             )
             job.result = {"metered": True}
+        if job.kind == "sync" and (job.result or {}).get("sync_job_id"):
+            from app.models import SyncJob
+            sync = await owned(db, SyncJob, tenant_id, UUID(job.result["sync_job_id"]))
+            if sync.status == "cancelled":
+                job.status = "cancelled"
+                await db.commit()
+                return job
         if integration:
             token = await access_token(db, tenant_id, integration)
+        if job.kind == "message_send" and job.payload.get("approval_id"):
+            from app.services.ai.approval import validate_approved_send
+            await validate_approved_send(db, job, integration)
         job.status, job.claimed_at = "running", now()
+        if job.kind == "message_send":
+            message = await db.scalar(select(Message).where(Message.tenant_id == tenant_id,
+                                     Message.idempotency_key == "job:" + str(job.id)))
+            if message:
+                message.status = "sending"
         # Persist the claim before crossing an external boundary. Crashes cannot silently resend.
         if job.kind != "automation":
             await db.commit()
+        if job.kind == "workforce":
+            from app.services.ai.agent import run_execution
+            result = await run_execution(db, job, gateway=gateway)
+            job.result = result
+            job.status = "retry" if result.get("pending") else "completed"
+            job.available_at = now() + timedelta(seconds=5)
+            job.completed_at = None if result.get("pending") else now()
+            await db.commit()
+            return job
         async with db.begin_nested():
             if job.kind in {"campaign_send", "message_send"}:
+                if job.kind == "message_send":
+                    # The durable claim committed above released locks. Recheck the
+                    # real write boundary, including changes during token refresh.
+                    await db.refresh(job, with_for_update=True)
+                    integration = await db.scalar(select(Integration).where(
+                        Integration.tenant_id == tenant_id,
+                        Integration.id == UUID(job.payload["integration_id"])
+                    ).with_for_update().execution_options(populate_existing=True))
+                    if not integration:
+                        raise ProviderFailure("integration_disconnected")
+                    adapter = adapter_for(integration)
+                    token = await access_token(db, tenant_id, integration)
+                    await authorize(db, tenant_id, job.actor_id, "conversations:send")
+                    if await suppressed(db, tenant_id, job.payload["recipient"]):
+                        raise ProviderFailure("recipient_suppressed")
+                    if getattr(adapter, "name", None) == "whatsapp":
+                        from app.services.crm.conversations import validate_whatsapp_send
+                        conversation = await owned(db, Conversation, tenant_id, UUID(job.payload["conversation_id"]), True)
+                        await validate_whatsapp_send(db, tenant_id, conversation, job.payload["recipient"])
+                    if job.payload.get("approval_id"):
+                        from app.services.ai.approval import validate_approved_send
+                        await validate_approved_send(db, job, integration)
                 result = await adapter.send(token, job.payload, str(job.id))
                 if job.kind == "campaign_send":
                     recipient = await owned(
@@ -187,27 +249,14 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
                         now(),
                     )
             elif job.kind == "sync":
-                result = await adapter.sync(token, job.payload.get("cursor"))
-                count = 0
-                for item in result.get("messages", [])[:25]:
-                    await ingest_message(db, tenant_id, integration, item)
-                    count += 1
-                log = IntegrationSyncLog(
-                    tenant_id=tenant_id,
-                    integration_id=integration.id,
-                    sync_type="inbox",
-                    status=SyncStatusEnum.COMPLETED,
-                    records_processed=count,
-                    started_at=job.claimed_at,
-                    completed_at=now(),
-                )
-                db.add(log)
-                integration.last_sync_at, integration.last_sync_status = (
-                    now(),
-                    SyncStatusEnum.COMPLETED,
-                )
-                integration.records_synced += count
-                result = {"records_processed": count, "cursor": result.get("cursor")}
+                from app.services.crm.provider_pipeline import execute_sync_page
+                result = await execute_sync_page(db, tenant_id, job, integration, adapter, token)
+            elif job.kind == "provider_webhook":
+                from app.services.crm.provider_pipeline import process_receipt
+                result = await process_receipt(db, tenant_id, UUID(job.payload["receipt_id"]))
+            elif job.kind == "workforce_approval":
+                from app.services.ai.approval import run_approval
+                result = await run_approval(db, job)
             elif job.kind == "automation":
                 from app.services.crm.automation import execute_workflow
 
@@ -222,6 +271,15 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
                 None,
                 now(),
             )
+            if result.get("has_more") or result.get("pending") or result.get("state") == "failed":
+                job.status, job.completed_at = "retry", None
+                job.available_at = now() + timedelta(seconds=5)
+            if result.get("has_more"):
+                job.attempts = 0  # Retry budget is per successfully persisted page.
+            if result.get("cancelled"):
+                job.status = "cancelled"
+            if result.get("state") == "dead_letter":
+                job.status, job.error_code = "failed", "webhook_dead_letter"
             audit(
                 db,
                 tenant_id,
@@ -253,7 +311,7 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
             else "failed"
         )
         job.error_code = code
-        job.available_at = now() + timedelta(seconds=60 * max(1, job.attempts))
+        job.available_at = now() + timedelta(seconds=max(getattr(exc, "retry_after", 60), 60 * max(1, job.attempts)))
         audit(
             db,
             tenant_id,
@@ -263,6 +321,16 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
             job.id,
             False,
         )
+        if job.kind == "workforce":
+            from app.models import AgentExecution
+            execution = await owned(db, AgentExecution, tenant_id, UUID(job.payload["execution_id"]))
+            execution.state, execution.error_message, execution.failed_at = "failed", code, now()
+        if job.kind == "workforce_approval":
+            from app.models import ApprovalRequest
+            approval = await owned(db, ApprovalRequest, tenant_id, UUID(job.payload["approval_id"]), True)
+            if approval.status == "approved":
+                approval.status = "failed"
+                approval.execution_result = {"error": code}
         if job.kind == "automation":
             log = await owned(
                 db, ExecutionLog, tenant_id, UUID(job.payload["execution_id"])
@@ -294,6 +362,14 @@ async def execute_job(db, tenant_id, job_id, *, gateway=None):
                     else "queued"
                 )
         if job.kind == "sync":
+            from app.models import SyncJob
+            sync_id = (job.result or {}).get("sync_job_id")
+            if sync_id:
+                sync = await owned(db, SyncJob, tenant_id, UUID(sync_id))
+                sync.status, sync.error_message = "partial" if job.status == "retry" else "failed", code
+            if integration:
+                integration.last_sync_error = code
+                integration.last_sync_status = SyncStatusEnum.FAILED
             db.add(
                 IntegrationSyncLog(
                     tenant_id=tenant_id,

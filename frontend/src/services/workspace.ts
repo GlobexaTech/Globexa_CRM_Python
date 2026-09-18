@@ -57,7 +57,8 @@ export type Analytics = Partial<Dashboard> & {
   usage?: {
     success: boolean;
     requests: number;
-    tokens: number;
+    tokens: number | null;
+    unmeasured_requests?: number;
     known_cost_usd: number | null;
     unpriced_requests: number;
   }[];

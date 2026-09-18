@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import secrets
+import copy
 from datetime import timedelta
 from sqlalchemy import select, delete
 from fastapi import HTTPException
@@ -19,10 +20,13 @@ async def start_oauth(db, tenant_id, actor_id, integration_id):
     await authorize(db, tenant_id, actor_id, "integrations:write")
     integration = await owned(db, Integration, tenant_id, integration_id, True)
     adapter = adapter_for(integration)
-    if "connect" not in adapter.capabilities:
+    if "oauth" not in adapter.capabilities:
         raise HTTPException(501, "Provider OAuth is unavailable")
     config = adapter.configuration()
     await meter(db, tenant_id, actor_id, "integrations")
+    # Only the latest authorization flow may install credentials.
+    await db.execute(delete(OAuthSession).where(
+        OAuthSession.tenant_id == tenant_id, OAuthSession.integration_id == integration_id))
     state, verifier = secrets.token_urlsafe(48), secrets.token_urlsafe(64)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
@@ -71,9 +75,26 @@ async def finish_oauth(db, tenant_id, actor_id, integration_id, data):
         raise HTTPException(400, "OAuth state is invalid or expired")
     session.consumed_at = now()
     verifier, redirect_uri = session.verifier, session.redirect_uri
+    session_id, consumed_at = session.id, session.consumed_at
+    expected_type, expected_config = integration.type, copy.deepcopy(integration.config)
+    adapter = adapter_for(integration)
     # A one-use authorization code must not be retried after an ambiguous exchange.
     await db.commit()
-    tokens = await adapter_for(integration).connect(data.code, verifier, redirect_uri)
+    tokens = await adapter.connect(data.code, verifier, redirect_uri)
+    # The network exchange releases database locks. Disconnect, reconfiguration,
+    # a newer OAuth flow, or permission revocation must invalidate this callback.
+    await authorize(db, tenant_id, actor_id, "integrations:write")
+    integration = await db.scalar(select(Integration).where(
+        Integration.tenant_id == tenant_id, Integration.id == integration_id
+    ).with_for_update().execution_options(populate_existing=True))
+    current_session = await db.scalar(select(OAuthSession).where(
+        OAuthSession.tenant_id == tenant_id, OAuthSession.id == session_id,
+        OAuthSession.integration_id == integration_id, OAuthSession.actor_id == actor_id
+    ).with_for_update().execution_options(populate_existing=True))
+    if (not integration or not current_session or current_session.consumed_at != consumed_at
+            or current_session.expires_at < now() or integration.type != expected_type
+            or integration.config != expected_config):
+        raise HTTPException(409, "Integration changed during authorization; reconnect required")
     await store_tokens(db, tenant_id, integration, tokens)
     integration.status = IntegrationStatusEnum.CONNECTED
     audit(
@@ -112,8 +133,11 @@ async def store_tokens(db, tenant_id, integration, tokens):
 
 
 async def access_token(db, tenant_id, integration):
-    await owned(db, Integration, tenant_id, integration.id, True)
-    if integration.status != IntegrationStatusEnum.CONNECTED:
+    await db.flush()
+    integration = await db.scalar(select(Integration).where(
+        Integration.tenant_id == tenant_id, Integration.id == integration.id
+    ).with_for_update().execution_options(populate_existing=True))
+    if not integration or integration.status != IntegrationStatusEnum.CONNECTED:
         raise ProviderFailure("integration_disconnected")
     row = await db.scalar(
         select(OAuthToken)
@@ -122,11 +146,23 @@ async def access_token(db, tenant_id, integration):
             OAuthToken.integration_id == integration.id,
         )
         .order_by(OAuthToken.created_at.desc())
-        .limit(1)
+        .limit(1).execution_options(populate_existing=True)
     )
     if not row:
-        raise ProviderFailure("credentials_missing")
-    if row.expires_at is None or row.expires_at < now() + timedelta(seconds=60):
+        import json
+        credential = await db.scalar(select(IntegrationCredential).where(
+            IntegrationCredential.tenant_id == tenant_id, IntegrationCredential.integration_id == integration.id,
+            IntegrationCredential.is_active.is_(True)).order_by(IntegrationCredential.created_at.desc()).limit(1).execution_options(populate_existing=True))
+        if not credential:
+            raise ProviderFailure("credentials_missing")
+        values = json.loads(credential.credentials_encrypted)
+        token = credential.access_token or values.get("access_token") or values.get("api_key")
+        if not token:
+            raise ProviderFailure("credentials_missing")
+        if credential.token_expires_at and credential.token_expires_at < now():
+            raise ProviderFailure("token_expired_reconnect_required")
+        return token
+    if row.expires_at is not None and row.expires_at < now() + timedelta(seconds=60):
         if not row.refresh_token:
             raise ProviderFailure("token_expired_reconnect_required")
         tokens = await adapter_for(integration).refresh(row.refresh_token)
@@ -173,6 +209,8 @@ async def disconnect(db, tenant_id, actor_id, integration_id):
 
 async def request_sync(db, tenant_id, actor_id, integration_id, key, cursor=None):
     await authorize(db, tenant_id, actor_id, "integrations:write")
+    if cursor is not None:
+        raise HTTPException(422, "Sync cursors are managed by the server")
     integration = await owned(db, Integration, tenant_id, integration_id)
     if "sync" not in adapter_for(integration).capabilities:
         raise HTTPException(501, "Provider sync is unavailable")
@@ -182,9 +220,16 @@ async def request_sync(db, tenant_id, actor_id, integration_id, key, cursor=None
         actor_id,
         "sync",
         "sync:" + key,
-        {"integration_id": str(integration_id), "cursor": cursor},
+        {"integration_id": str(integration_id)},
     )
     if created:
+        from app.models import SyncJob, SyncCursor
+        has_cursor = await db.scalar(select(SyncCursor.id).where(SyncCursor.tenant_id == tenant_id,
+                                     SyncCursor.integration_id == integration_id, SyncCursor.cursor_type == "provider"))
+        sync_job = SyncJob(tenant_id=tenant_id, integration_id=integration_id,
+                          sync_type="incremental" if has_cursor else "initial", status="pending")
+        db.add(sync_job)
+        await db.flush()
         await meter(db, tenant_id, actor_id, "integrations")
-        job.result = {"metered": True}
+        job.result = {"metered": True, "sync_job_id": str(sync_job.id)}
     return job

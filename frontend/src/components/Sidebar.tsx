@@ -14,6 +14,8 @@ import {
   CheckSquare,
   Zap,
   Bot,
+  Workflow,
+  ShieldCheck,
   BarChart3,
   Plug,
   Settings,
@@ -48,6 +50,9 @@ const groups: [string, [LucideIcon, string, string, string][]][] = [
     "INTELLIGENCE",
     [
       [Bot, "AI workspace", "/ai-agents", "ai:chat"],
+      [Bot, "AI Workforce", "/ai-workforce", "ai:chat"],
+      [Workflow, "Supervisor", "/supervisor", "ai:chat"],
+      [ShieldCheck, "Approval Center", "/approvals", "ai:chat"],
       [BarChart3, "Analytics", "/analytics", "analytics:read"],
     ],
   ],

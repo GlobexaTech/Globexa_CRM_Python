@@ -2,6 +2,7 @@
 
 import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { ArrowLeft, Mail, Plus, RefreshCw, Send } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { Dialog } from "@/components/Dialog";
@@ -240,6 +241,7 @@ function ConversationView({
   canSend: boolean;
   onBack: () => void;
 }) {
+  const { can } = useSession();
   const detail = useResource<ConversationDetail>(
     `/operations/conversations/${id}`,
   );
@@ -297,6 +299,14 @@ function ConversationView({
                 ))}
               </ul>
               <div className="crm-actions mt-3">
+                {can("ai:chat") && (
+                  <Link
+                    className="crm-secondary"
+                    href={`/ai-workforce?entity_type=conversation&entity_id=${id}`}
+                  >
+                    Analyze with AI Workforce
+                  </Link>
+                )}
                 <button
                   className="crm-secondary"
                   disabled={
@@ -399,14 +409,28 @@ function ConversationView({
           </p>
         )}
         {canSend &&
-        detail.data?.conversation.channel === "email" &&
+        ["email", "whatsapp"].includes(
+          detail.data?.conversation.channel || "",
+        ) &&
+        detail.data &&
         detail.data.conversation.integration_id ? (
           <form onSubmit={send} className="crm-form">
             <label className="crm-field">
-              Recipient email
+              {detail.data.conversation.channel === "whatsapp"
+                ? "Recipient phone (+country code)"
+                : "Recipient email"}
               <input
                 className="crm-input"
-                type="email"
+                type={
+                  detail.data.conversation.channel === "whatsapp"
+                    ? "tel"
+                    : "email"
+                }
+                pattern={
+                  detail.data.conversation.channel === "whatsapp"
+                    ? "\\+[1-9][0-9]{7,14}"
+                    : undefined
+                }
                 required
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
@@ -437,15 +461,16 @@ function ConversationView({
               {action.pending ? "Submitting…" : "Queue message"}
             </button>
             <p className="crm-muted">
-              Delivery is confirmed by the background job. Attachments cannot be
-              sent in this release.
+              Sent means the provider accepted the message. Delivered and read
+              appear only when confirmed by the provider. Unknown outcomes are
+              not retried automatically.
             </p>
           </form>
         ) : (
           <p className="crm-muted">
             {!canSend
               ? "Your role cannot send messages."
-              : "Sending requires an email conversation linked to a supported integration."}
+              : "Sending requires a supported email or WhatsApp integration."}
           </p>
         )}
       </div>
@@ -460,6 +485,7 @@ function ConversationForm({
   initialRelation: Record<string, string>;
 }) {
   const { can } = useSession();
+  const [channel, setChannel] = useState<"email" | "whatsapp">("email");
   const contacts = useResource<LegacyPage<Choice>>(
     "/contacts?page_size=100",
     can("contacts:read"),
@@ -485,7 +511,7 @@ function ConversationForm({
     await action.run(async () => {
       const row = await operations.createConversation({
         subject: String(data.get("subject")).trim(),
-        channel: "email",
+        channel,
         contact_id: optional("contact_id"),
         company_id: optional("company_id"),
         lead_id: optional("lead_id"),
@@ -501,12 +527,31 @@ function ConversationForm({
   return (
     <form className="crm-form" onSubmit={submit}>
       <label className="crm-field">
+        Conversation channel
+        <select
+          className="crm-input"
+          value={channel}
+          onChange={(event) => setChannel(event.target.value as typeof channel)}
+        >
+          <option value="email">Email</option>
+          <option value="whatsapp">WhatsApp</option>
+        </select>
+      </label>
+      <label className="crm-field">
         Subject
         <input name="subject" className="crm-input" required maxLength={255} />
       </label>
       <label className="crm-field">
-        Participant email
-        <input name="email" className="crm-input" type="email" required />
+        {channel === "whatsapp"
+          ? "Participant phone (+country code)"
+          : "Participant email"}
+        <input
+          name="email"
+          className="crm-input"
+          type={channel === "whatsapp" ? "tel" : "email"}
+          pattern={channel === "whatsapp" ? "\\+[1-9][0-9]{7,14}" : undefined}
+          required
+        />
       </label>
       <label className="crm-field">
         Participant name
@@ -546,11 +591,17 @@ function ConversationForm({
         </label>
       ))}
       <label className="crm-field">
-        Email integration
+        {channel === "whatsapp" ? "WhatsApp integration" : "Email integration"}
         <select name="integration_id" className="crm-input">
           <option value="">No integration (read-only conversation)</option>
           {integrations.data?.items
-            .filter((row) => row.status === "connected")
+            .filter(
+              (row) =>
+                row.status === "connected" &&
+                (channel === "whatsapp"
+                  ? row.provider === "whatsapp"
+                  : row.type === "email_inbox"),
+            )
             .map((row) => (
               <option key={row.id} value={row.id}>
                 {row.name}
@@ -562,8 +613,8 @@ function ConversationForm({
         )}
       </label>
       <p className="crm-muted">
-        Only email sending is currently available. Related record pickers show
-        the first 100 accessible records.
+        Sending uses the selected provider and its supported capabilities.
+        Related record pickers show the first 100 accessible records.
       </p>
       {action.error && (
         <p role="alert" className="crm-error">

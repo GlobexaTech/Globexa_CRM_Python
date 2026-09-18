@@ -5,16 +5,18 @@ import os
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import parseaddr
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, quote
 from typing import Protocol
 import httpx
 import json
+import re
 
 
 class ProviderFailure(RuntimeError):
-    def __init__(self, code="provider_failure", *, retryable=False, uncertain=False):
+    def __init__(self, code="provider_failure", *, retryable=False, uncertain=False, retry_after=60):
         super().__init__(code)
         self.code, self.retryable, self.uncertain = code, retryable, uncertain
+        self.retry_after = min(3600, max(1, int(retry_after)))
 
 
 class ProviderAdapter(Protocol):
@@ -42,15 +44,16 @@ class UnavailableAdapter:
     )
 
 
-class MailAdapter:
+class MailAdapter(UnavailableAdapter):
     capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "send"}
+        {"connect", "oauth", "disconnect", "refresh", "health_check", "sync", "send"}
     )
     # Neither API promises deduplication of retries by a caller-supplied key.
     idempotent_send = False
 
     def __init__(self, name, transport=None):
         self.name, self.spec, self.transport = name, SPECS[name], transport
+        self.config = {}
 
     def configuration(self):
         prefix = "CRM_" + self.name.upper()
@@ -58,9 +61,14 @@ class MailAdapter:
             key: os.environ.get(prefix + "_" + key.upper(), "")
             for key in ("client_id", "client_secret", "redirect_uri")
         }
-        if not all(values.values()) or not values["redirect_uri"].startswith(
-            "https://"
-        ):
+        try:
+            uri = urlsplit(values["redirect_uri"])
+            valid_redirect = (uri.scheme == "https" and bool(uri.hostname) and not uri.username
+                              and not uri.password and not uri.fragment and uri.port in {None, 443}
+                              and "\\" not in values["redirect_uri"])
+        except ValueError:
+            valid_redirect = False
+        if not all(values.values()) or not valid_redirect:
             raise ProviderFailure("oauth_not_configured")
         return values
 
@@ -75,7 +83,7 @@ class MailAdapter:
             "code_challenge": challenge,
             "code_challenge_method": "S256",
         }
-        if self.name == "gmail":
+        if self.name in {"gmail", "google_ads"}:
             params.update(access_type="offline", prompt="consent")
         return self.spec["authorize"] + "?" + urlencode(params)
 
@@ -85,21 +93,27 @@ class MailAdapter:
                 transport=self.transport, timeout=30, follow_redirects=False
             ) as client:
                 response = await client.request(method, url, **kwargs)
+                if len(response.content) > 5_000_000:
+                    raise ProviderFailure("provider_response_too_large", uncertain=external_write)
         except httpx.HTTPError:
             raise ProviderFailure(
                 "transport_error",
                 retryable=not external_write,
                 uncertain=external_write,
             ) from None
-        if response.status_code >= 400:
+        if response.status_code >= 300:
             raise ProviderFailure(
                 f"provider_http_{response.status_code}",
                 retryable=response.status_code == 429
                 or (response.status_code >= 500 and not external_write),
                 uncertain=external_write and response.status_code >= 500,
+                retry_after=response.headers.get("retry-after", "60") if response.headers.get("retry-after", "60").isdigit() else 60,
             )
         try:
-            return response.json() if response.content else {}
+            result = response.json() if response.content else {}
+            if not isinstance(result, dict) or result.get("error"):
+                raise ProviderFailure("invalid_provider_response", uncertain=external_write)
+            return result
         except ValueError:
             raise ProviderFailure(
                 "invalid_provider_response", uncertain=external_write
@@ -132,20 +146,22 @@ class MailAdapter:
 
     async def disconnect(self, token):
         # Outlook has no equivalent per-app delegated-token revocation endpoint.
-        if self.name == "gmail":
+        if self.name in {"gmail", "google_ads"}:
             await self.request(
                 "POST",
                 "https://oauth2.googleapis.com/revoke",
                 external_write=True,
                 data={"token": token},
             )
-        return {"remote_revocation": self.name == "gmail"}
+        return {"remote_revocation": self.name in {"gmail", "google_ads"}}
 
     async def health_check(self, token):
         path = "/users/me/profile" if self.name == "gmail" else "/me"
         data = await self.request(
             "GET", self.spec["api"] + path, headers={"Authorization": "Bearer " + token}
         )
+        if not (data.get("emailAddress") if self.name == "gmail" else data.get("id")):
+            raise ProviderFailure("invalid_identity_response")
         return {
             "connected": True,
             "address": data.get("emailAddress")
@@ -156,7 +172,7 @@ class MailAdapter:
     async def send(self, token, message, idempotency_key):
         if message.get("attachments"):
             raise ProviderFailure("outbound_attachments_not_supported")
-        headers = {"Authorization": "Bearer " + token}
+        headers = {"Authorization": "Bearer " + token, "Prefer": 'IdType="ImmutableId"'}
         if self.name == "gmail":
             mime = EmailMessage()
             mime["To"], mime["Subject"] = message["recipient"], message["subject"]
@@ -177,73 +193,45 @@ class MailAdapter:
                 headers=headers,
                 json=payload,
             )
+            if not result.get("id"):
+                raise ProviderFailure("invalid_send_response", uncertain=True)
             return {
                 "provider_message_id": result["id"],
                 "thread_id": result.get("threadId"),
                 "status": "sent",
             }
-        await self.request(
+        draft = await self.request(
             "POST",
-            self.spec["api"] + "/me/sendMail",
+            self.spec["api"] + "/me/messages",
             external_write=True,
             headers=headers,
             json={
-                "message": {
                     "subject": message["subject"],
                     "body": {"contentType": "Text", "content": message["body"]},
                     "toRecipients": [
                         {"emailAddress": {"address": message["recipient"]}}
                     ],
-                },
-                "saveToSentItems": True,
             },
         )
-        return {"provider_message_id": None, "status": "sent"}
+        if not draft.get("id"):
+            raise ProviderFailure("invalid_draft_response", uncertain=True)
+        await self.request("POST", self.spec["api"] + "/me/messages/" + quote(draft["id"], safe="") + "/send",
+                           external_write=True, headers=headers)
+        return {"provider_message_id": draft["id"], "thread_id": draft.get("conversationId"), "status": "sent"}
 
     async def sync(self, token, cursor=None):
-        headers = {"Authorization": "Bearer " + token}
         if self.name == "outlook":
-            # Cursor is an integer offset, never an arbitrary URL from the caller.
-            offset = int(cursor or 0)
-            if not 0 <= offset <= 100000:
-                raise ProviderFailure("invalid_cursor")
-            data = await self.request(
-                "GET",
-                self.spec["api"] + "/me/mailFolders/inbox/messages",
-                headers=headers,
-                params={
-                    "$top": 25,
-                    "$skip": offset,
-                    "$orderby": "receivedDateTime desc",
-                    "$select": "id,conversationId,subject,bodyPreview,from,toRecipients,receivedDateTime",
-                },
-            )
-            items = []
-            for r in data.get("value", []):
-                items.append(
-                    {
-                        "provider_message_id": r["id"],
-                        "thread_id": r.get("conversationId", r["id"]),
-                        "subject": r.get("subject") or "(no subject)",
-                        "body": r.get("bodyPreview") or "(empty message)",
-                        "sender": r.get("from", {})
-                        .get("emailAddress", {})
-                        .get("address", ""),
-                        "recipient": next(
-                            iter(r.get("toRecipients", [])), {}
-                        ).get("emailAddress", {})
-                        .get("address", ""),
-                        "occurred_at": r["receivedDateTime"],
-                        "attachments": [],
-                    }
-                )
-            return {
-                "messages": items,
-                "cursor": str(offset + 25) if data.get("@odata.nextLink") else None,
-            }
+            return await outlook_sync(self, token, cursor)
+        headers = {"Authorization": "Bearer " + token}
+        state = decode_cursor(cursor)
+        if state.get("mode") == "history":
+            return await gmail_history(self, token, state)
+        if not state:
+            profile = await self.request("GET", self.spec["api"] + "/users/me/profile", headers=headers)
+            state = {"history_id": profile["historyId"]}
         params = {"maxResults": 25, "labelIds": "INBOX"}
-        if cursor:
-            params["pageToken"] = cursor
+        if state.get("page"):
+            params["pageToken"] = state["page"]
         data = await self.request(
             "GET",
             self.spec["api"] + "/users/me/messages",
@@ -292,7 +280,7 @@ class MailAdapter:
                     "provider_message_id": item["id"],
                     "thread_id": item.get("threadId"),
                     "subject": fields.get("subject") or "(no subject)",
-                    "body": "\\n".join(parts)
+                    "body": "\n".join(parts)
                     or item.get("snippet")
                     or "(empty message)",
                     "sender": parseaddr(fields.get("from", ""))[1],
@@ -303,696 +291,429 @@ class MailAdapter:
                     "attachments": attachments,
                 }
             )
-        return {"messages": items, "cursor": data.get("nextPageToken")}
+        next_page = data.get("nextPageToken")
+        next_state = {**state, "page": next_page} if next_page else {"mode": "history", "history_id": state["history_id"]}
+        return {"messages": items, "cursor": encode_cursor(next_state), "has_more": bool(next_page)}
 
     async def handle_webhook(self, payload):
         raise ProviderFailure("provider_push_contract_not_configured")
 
 
-class WhatsAppAdapter:
-    capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "send", "handle_webhook"}
-    )
-    # WhatsApp does not provide idempotency keys for outbound messages, but we can use our own.
-    idempotent_send = False
 
-    def __init__(self, transport=None):
-        self.spec = SPECS["whatsapp"]
-        self.transport = transport
+def encode_cursor(value):
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
-    def configuration(self):
-        # WhatsApp Cloud API uses a permanent access token (long-lived) or we can use a system user token.
-        # For simplicity, we expect the token to be stored directly in the credentials.
-        # We'll also need the phone number ID from the Meta Business Account.
-        cfg = {
-            "access_token": os.environ.get("CRM_WHATSAPP_ACCESS_TOKEN", ""),
-            "phone_number_id": os.environ.get("CRM_WHATSAPP_PHONE_NUMBER_ID", ""),
-            "business_account_id": os.environ.get("CRM_WHATSAPP_BUSINESS_ACCOUNT_ID", ""),
-            "verify_token": os.environ.get("CRM_WHATSAPP_VERIFY_TOKEN", ""),
-            # The webhook URL is set in the integration config, not in credentials.
-        }
-        if not cfg["access_token"]:
-            raise ProviderFailure("whatsapp_not_configured")
-        return cfg
 
-    # WhatsApp doesn't use OAuth code exchange in the same way; we treat the access token as the credential.
-    # For the purpose of the integrations framework, we'll implement connect/disconnect as no-ops
-    # that just validate the token.
-    async def connect(self, code, verifier, redirect_uri):
-        # WhatsApp Cloud API uses a permanent token, so we ignore the OAuth flow.
-        # However, to fit the framework, we'll just validate the token.
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"https://graph.facebook.com/v18.0/{cfg['phone_number_id']}",
-                    params={"access_token": cfg["access_token"]},
-                )
-                if response.status_code != 200:
-                    raise ProviderFailure("invalid_token")
-        except httpx.HTTPError as e:
-            raise ProviderFailure("provider_connection_failed") from e
-        return {"status": "connected"}
+def decode_cursor(value):
+    if not value:
+        return {}
+    try:
+        result = json.loads(value)
+        if not isinstance(result, dict) or len(value) > 16000:
+            raise ValueError
+        return result
+    except (TypeError, ValueError):
+        raise ProviderFailure("invalid_cursor") from None
+
+
+async def outlook_sync(adapter, token, cursor):
+    path = "/me/mailFolders/inbox/messages/delta"
+    url = adapter.spec["api"] + path
+    params = {"$select": "id,conversationId,subject,bodyPreview,from,toRecipients,receivedDateTime", "$top": 25}
+    if cursor:
+        parsed = urlsplit(cursor)
+        # Provider-produced opaque links are persisted on the server. Still constrain the
+        # authority and resource on every use so compromised cursors cannot cause SSRF.
+        if (parsed.scheme != "https" or parsed.netloc != "graph.microsoft.com"
+                or parsed.path != "/v1.0" + path or parsed.fragment or len(cursor) > 16000):
+            raise ProviderFailure("invalid_cursor")
+        url, params = cursor, None
+    data = await adapter.request("GET", url, params=params,
+                                 headers={"Authorization": "Bearer " + token, "Prefer": 'IdType="ImmutableId"'})
+    messages = []
+    for item in data.get("value", []):
+        if "@removed" in item:
+            continue  # CRM audit history is retained when mail is deleted upstream.
+        messages.append({"provider_message_id": item["id"], "thread_id": item.get("conversationId", item["id"]),
+                         "subject": item.get("subject") or "(no subject)", "body": item.get("bodyPreview") or "(empty message)",
+                         "sender": item.get("from", {}).get("emailAddress", {}).get("address", ""),
+                         "recipient": next(iter(item.get("toRecipients", [])), {}).get("emailAddress", {}).get("address", ""),
+                         "occurred_at": item["receivedDateTime"], "attachments": []})
+    next_url = data.get("@odata.nextLink") or data.get("@odata.deltaLink")
+    if not next_url:
+        raise ProviderFailure("missing_delta_cursor")
+    return {"messages": messages, "cursor": next_url, "has_more": bool(data.get("@odata.nextLink"))}
+
+
+async def gmail_history(adapter, token, state):
+    headers = {"Authorization": "Bearer " + token}
+    params = {"startHistoryId": state["history_id"], "historyTypes": "messageAdded", "maxResults": 25}
+    if state.get("page"):
+        params["pageToken"] = state["page"]
+    data = await adapter.request("GET", adapter.spec["api"] + "/users/me/history", headers=headers, params=params)
+    messages = []
+    seen = set()
+    for history in data.get("history", []):
+        for entry in history.get("messagesAdded", []):
+            ref = entry["message"]
+            if ref["id"] in seen or "INBOX" not in ref.get("labelIds", ["INBOX"]):
+                continue
+            seen.add(ref["id"])
+            item = await adapter.request("GET", adapter.spec["api"] + "/users/me/messages/" + quote(ref["id"], safe=""),
+                                         headers=headers, params={"format": "full"})
+            fields = {h["name"].lower(): h["value"] for h in item.get("payload", {}).get("headers", [])}
+            parts = []
+            stack = [(item.get("payload", {}), 0)]
+            while stack:
+                part, depth = stack.pop()
+                if depth > 8:
+                    raise ProviderFailure("message_mime_too_deep")
+                value = part.get("body", {}).get("data")
+                if part.get("mimeType") == "text/plain" and value:
+                    parts.append(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)).decode("utf-8", errors="replace"))
+                stack.extend((child, depth + 1) for child in part.get("parts", []))
+            messages.append({"provider_message_id": item["id"], "thread_id": item.get("threadId", item["id"]),
+                             "subject": fields.get("subject") or "(no subject)", "body": "\n".join(parts) or item.get("snippet") or "(empty message)",
+                             "sender": parseaddr(fields.get("from", ""))[1], "recipient": parseaddr(fields.get("to", ""))[1],
+                             "occurred_at": datetime.fromtimestamp(int(item["internalDate"]) / 1000, timezone.utc).isoformat(), "attachments": []})
+    page = data.get("nextPageToken")
+    next_state = {**state, "page": page} if page else {"mode": "history", "history_id": data["historyId"]}
+    return {"messages": messages, "cursor": encode_cursor(next_state), "has_more": bool(page)}
+
+
+class OAuthProvider(MailAdapter):
+    capabilities = frozenset({"connect", "oauth", "disconnect", "health_check"})
+    send = sync = handle_webhook = refresh = UnavailableAdapter.unsupported
 
     async def disconnect(self, token):
-        # WhatsApp tokens can be revoked by deleting the phone number from the business account,
-        # but we'll just return success.
+        # A local disconnect is explicit. Never pretend to revoke a provider token.
         return {"remote_revocation": False}
 
-    async def refresh(self, refresh_token):
-        # WhatsApp access tokens are long-lived and don't refresh in the same way.
-        # We'll just return the same token.
+    async def health_check(self, token):
+        data = await self.request("GET", self.spec["api"] + "/userinfo", headers={"Authorization": "Bearer " + token})
+        if not data.get("sub"):
+            raise ProviderFailure("invalid_identity_response")
+        return {"connected": True, "provider_account_id": str(data["sub"]), "address": data.get("email")}
+
+
+class MetaProviderAdapter(OAuthProvider):
+    capabilities = frozenset({"connect", "oauth", "disconnect", "health_check", "sync", "handle_webhook"})
+
+    def __init__(self, transport=None, name="meta", config=None):
+        super().__init__(name, transport)
+        self.config = config or {}
+
+    def graph_api(self):
+        version = os.environ.get("CRM_META_GRAPH_VERSION", "")
+        if not re.fullmatch(r"v[0-9]{1,2}\.0", version):
+            raise ProviderFailure("graph_api_version_not_configured")
+        return "https://graph.facebook.com/" + version
+
+    def authorization_url(self, state, challenge):
         cfg = self.configuration()
-        return {
-            "access_token": cfg["access_token"],
-            "token_type": "Bearer",
-            "expires_in": 0,  # No expiry
-        }
+        return "https://www.facebook.com/" + self.graph_api().rsplit("/", 1)[-1] + "/dialog/oauth?" + urlencode({
+            "client_id": cfg["client_id"], "redirect_uri": cfg["redirect_uri"], "response_type": "code",
+            "scope": self.spec["scopes"], "state": state})
+
+    async def connect(self, code, verifier, redirect_uri):
+        cfg = self.configuration()
+        if redirect_uri != cfg["redirect_uri"]:
+            raise ProviderFailure("redirect_mismatch")
+        return await self.request("POST", self.graph_api() + "/oauth/access_token", external_write=True,
+                                  data={**cfg, "code": code})
 
     async def health_check(self, token):
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"https://graph.facebook.com/v18.0/{cfg['phone_number_id']}",
-                    params={"access_token": cfg["access_token"]},
-                )
-                data = response.json()
-                return {
-                    "connected": True,
-                    "address": data.get("verified_name")
-                    or f"WhatsApp Business Account {cfg['business_account_id']}",
-                }
-        except Exception:
-            return {"connected": False, "address": None}
+        data = await self.request("GET", self.graph_api() + "/me", params={"fields": "id,name"},
+                                  headers={"Authorization": "Bearer " + token})
+        if not data.get("id"):
+            raise ProviderFailure("invalid_identity_response")
+        return {"connected": True, "provider_account_id": data["id"], "address": data.get("name")}
+
+    async def sync(self, token, cursor=None):
+        form = self.config.get("form_id")
+        if not form or not str(form).isdigit():
+            raise ProviderFailure("lead_form_not_configured")
+        state = decode_cursor(cursor)
+        params = {"limit": 25, "fields": "id,created_time,field_data"}
+        if state.get("after"):
+            params["after"] = state["after"]
+        if state.get("since"):
+            params["since"] = state["since"]
+        started = state.get("started") or int(datetime.now(timezone.utc).timestamp())
+        data = await self.request("GET", self.graph_api() + "/" + str(form) + "/leads", params=params,
+                                  headers={"Authorization": "Bearer " + token})
+        after = data.get("paging", {}).get("cursors", {}).get("after") if data.get("paging", {}).get("next") else None
+        next_state = {**state, "started": started, "after": after} if after else {"since": started}
+        return {"leads": [normalize_meta_lead(row) for row in data.get("data", [])],
+                "cursor": encode_cursor(next_state), "has_more": bool(after)}
+
+    async def handle_webhook(self, payload):
+        events = []
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                if change.get("field") == "leadgen":
+                    value = change["value"]
+                    events.append({"kind": "lead_reference", "provider_event_id": str(value["leadgen_id"]),
+                                   "lead_id": str(value["leadgen_id"]), "account_id": str(value["page_id"]),
+                                   "timestamp": int(value["created_time"])})
+            for value in entry.get("messaging", []):
+                if value.get("message", {}).get("is_echo"):
+                    continue
+                message = value.get("message", {})
+                if message.get("mid"):
+                    if not isinstance(message.get("text"), str):
+                        raise ProviderFailure("unsupported_social_message_type")
+                    events.append({"kind": "message", "provider_event_id": message["mid"], "account_id": str(entry["id"]),
+                                   "timestamp": int(value["timestamp"]) // 1000,
+                                   "message": {"provider_message_id": message["mid"], "thread_id": str(value["sender"]["id"]),
+                                               "provider_contact_id": str(value["sender"]["id"]), "channel": "social",
+                                               "subject": "Social conversation", "body": message["text"], "sender": str(value["sender"]["id"]),
+                                               "recipient": str(value["recipient"]["id"]),
+                                               "occurred_at": datetime.fromtimestamp(int(value["timestamp"]) / 1000, timezone.utc).isoformat(), "attachments": []}})
+        if not events:
+            raise ProviderFailure("unsupported_webhook_event")
+        return events
+
+    async def fetch_lead(self, token, lead_id):
+        data = await self.request("GET", self.graph_api() + "/" + quote(lead_id, safe=""),
+                                  params={"fields": "id,created_time,field_data"}, headers={"Authorization": "Bearer " + token})
+        return normalize_meta_lead(data)
+
+
+class InstagramProviderAdapter(MetaProviderAdapter):
+    # Instagram messaging arrives through Meta's signed page webhook. Historical
+    # inbox export and arbitrary outreach are deliberately not advertised.
+    capabilities = frozenset({"connect", "oauth", "disconnect", "health_check", "handle_webhook"})
+    sync = UnavailableAdapter.unsupported
+
+    def __init__(self, transport=None, config=None):
+        super().__init__(transport, "instagram", config)
+
+
+class WhatsAppAdapter(MetaProviderAdapter):
+    capabilities = frozenset({"configure", "disconnect", "health_check", "send", "handle_webhook"})
+    connect = refresh = sync = UnavailableAdapter.unsupported
+
+    def __init__(self, transport=None, config=None):
+        super().__init__(transport, "whatsapp", config)
+
+    def configuration(self):
+        self.graph_api()
+        return {}
+
+    def phone_id(self):
+        value = str(self.config.get("phone_number_id", ""))
+        if not value.isdigit():
+            raise ProviderFailure("phone_number_id_not_configured")
+        return value
+
+    async def health_check(self, token):
+        data = await self.request("GET", self.graph_api() + "/" + self.phone_id(),
+                                  params={"fields": "id,display_phone_number,verified_name"}, headers={"Authorization": "Bearer " + token})
+        if str(data.get("id")) != self.phone_id():
+            raise ProviderFailure("phone_number_identity_mismatch")
+        return {"connected": True, "provider_account_id": data["id"], "address": data.get("display_phone_number")}
 
     async def send(self, token, message, idempotency_key):
-        cfg = self.configuration()
-        headers = {
-            "Authorization": f"Bearer {cfg['access_token']}",
-            "Content-Type": "application/json",
-        }
-        # WhatsApp expects a specific JSON structure for text messages.
-        # We'll support only text messages for now.
         if message.get("attachments"):
             raise ProviderFailure("outbound_attachments_not_supported")
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": message["recipient"],  # Should be in international format
-            "type": "text",
-            "text": {"body": message["body"]},
-        }
-        # Note: WhatsApp does not use an idempotency key in the API, but we can rely on
-        # our own idempotency layer in the webhook processing.
-        # We'll add a custom header for idempotency if needed, but the API doesn't support it.
-        # Instead, we rely on the webhook deduplication at the ingestion layer.
+        if not re.fullmatch(r"\+?[1-9][0-9]{6,14}", message["recipient"]):
+            raise ProviderFailure("invalid_phone_number")
+        if len(message["body"]) > 4096:
+            raise ProviderFailure("whatsapp_message_too_long")
+        data = await self.request("POST", self.graph_api() + "/" + self.phone_id() + "/messages", external_write=True,
+                                  headers={"Authorization": "Bearer " + token},
+                                  json={"messaging_product": "whatsapp", "recipient_type": "individual", "type": "text",
+                                        "to": message["recipient"].lstrip("+"), "text": {"body": message["body"]}})
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    f"https://graph.facebook.com/v18.0/{cfg['phone_number_id']}/messages",
-                    headers=headers,
-                    json=payload,
-                )
-                if response.status_code >= 400:
-                    raise ProviderFailure(
-                        f"provider_http_{response.status_code}",
-                        retryable=response.status_code == 429,
-                        uncertain=True,
-                    )
-                result = response.json()
-                return {
-                    "provider_message_id": result["messages"][0]["id"],
-                    "status": "sent",
-                }
-        except httpx.HTTPError as e:
-            raise ProviderFailure("provider_http_error") from e
-
-    async def sync(self, token, cursor=None):
-        # WhatsApp does not provide a way to sync historical messages via the Cloud API
-        # for regular business accounts. We'll return empty.
-        # For customer service conversations, we might need to use the inbound webhook only.
-        return {"messages": [], "cursor": None}
+            message_id = data["messages"][0]["id"]
+        except (KeyError, IndexError, TypeError):
+            raise ProviderFailure("invalid_send_response", uncertain=True) from None
+        return {"provider_message_id": message_id, "status": "sent"}
 
     async def handle_webhook(self, payload):
-        # WhatsApp webhook payload format:
-        # {
-        #   "object": "whatsapp_business_account",
-        #   "entry": [
-        #     {
-        #       "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
-        #       "changes": [
-        #         {
-        #           "value": {
-        #             "messaging_product": "whatsapp",
-        #             "metadata": {
-        #               "display_phone_number": "...",
-        #               "phone_number_id": "..."
-        #             },
-        #             "contacts": [ { "profile": { "name": "..." }, "wa_id": "..." } ],
-        #             "messages": [ { "from": "...", "id": "...", "timestamp": "...", "text": { "body": "..." }, "type": "text" } ]
-        #           }
-        #         }
-        #       ]
-        #     }
-        #   ]
-        # }
-        # We'll extract messages and convert them to our internal format.
-        messages = []
-        try:
-            for entry in payload.get("entry", []):
-                for change in entry.get("changes", []):
-                    if change.get("field") == "messages":
-                        value = change.get("value", {})
-                        for msg in value.get("messages", []):
-                            # Only handle text messages for now
-                            if msg.get("type") == "text":
-                                messages.append(
-                                    {
-                                        "provider_message_id": msg["id"],
-                                        "from": msg["from"],
-                                        "timestamp": msg["timestamp"],
-                                        "text": msg["text"]["body"],
-                                        "type": msg["type"],
-                                        # We'll also store the contact name if available
-                                        "contact_name": None,
-                                    }
-                                )
-        except Exception as e:
-            raise ProviderFailure("invalid_webhook_payload") from e
-        return messages
+        if payload.get("object") != "whatsapp_business_account":
+            raise ProviderFailure("invalid_webhook_object")
+        events = []
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                account = str(value.get("metadata", {}).get("phone_number_id", ""))
+                for message in value.get("messages", []):
+                    if message.get("type") != "text":
+                        raise ProviderFailure("unsupported_whatsapp_message_type")
+                    sender = "+" + message["from"].lstrip("+")
+                    stamp = int(message["timestamp"])
+                    events.append({"kind": "message", "provider_event_id": message["id"], "account_id": account, "timestamp": stamp,
+                                   "message": {"provider_message_id": message["id"], "thread_id": sender,
+                                               "provider_contact_id": message["from"], "phone_verified": True, "channel": "whatsapp",
+                                               "subject": "WhatsApp conversation", "body": message["text"]["body"], "sender": sender,
+                                               "recipient": "+" + str(value.get("metadata", {}).get("display_phone_number", "")).lstrip("+"),
+                                               "occurred_at": datetime.fromtimestamp(stamp, timezone.utc).isoformat(), "attachments": []}})
+                for item in value.get("statuses", []):
+                    if item.get("status") not in {"sent", "delivered", "read", "failed"}:
+                        raise ProviderFailure("unsupported_delivery_status")
+                    events.append({"kind": "status", "provider_event_id": item["id"] + ":" + item["status"],
+                                   "provider_message_id": item["id"], "status": item["status"], "account_id": account,
+                                   "timestamp": int(item["timestamp"]), "error_code": str(next(iter(item.get("errors", [])), {}).get("code", ""))})
+        if not events:
+            raise ProviderFailure("unsupported_webhook_event")
+        return events
 
 
-# Provider specifications
-SPECS = {
-    "gmail": {
-        "authorize": "https://accounts.google.com/o/oauth2/v2/auth",
-        "exchange_endpoint": "https://oauth2.googleapis.com/token",
-        "api": "https://gmail.googleapis.com/gmail/v1",
-        "scopes": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
-    },
-    "outlook": {
-        "authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        "exchange_endpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        "api": "https://graph.microsoft.com/v1.0",
-        "scopes": "offline_access User.Read Mail.Read Mail.Send",
-    },
-    "whatsapp": {
-        # WhatsApp Cloud API does not use OAuth in the same way; we use a permanent token.
-        # These endpoints are placeholders for the framework.
-        "authorize": "https://www.facebook.com/v18.0/dialog/oauth",  # Not used
-        "exchange_endpoint": "https://graph.facebook.com/v18.0/oauth/access_token",  # Not used
-        "api": "https://graph.facebook.com/v18.0",
-        "scopes": "",  # Not used
-    },
-    "meta": {
-        # Meta (Facebook) Lead Ads and Pages API
-        "authorize": "https://www.facebook.com/v18.0/dialog/oauth",
-        "exchange_endpoint": "https://graph.facebook.com/v18.0/oauth/access_token",
-        "api": "https://graph.facebook.com/v18.0",
-        "scopes": "ads_management,pages_read_engagement,pages_messaging,pages_message_read,whatsapp_business_management",
-    },
-    "linkedin": {
-        "authorize": "https://www.linkedin.com/oauth/v2/authorization",
-        "exchange_endpoint": "https://www.linkedin.com/oauth/v2/accessToken",
-        "api": "https://api.linkedin.com/v2",
-        "scopes": "r_liteprofile,r_emailaddress,w_member_social",
-    },
-    "google_ads": {
-        "authorize": "https://accounts.google.com/o/oauth2/auth",
-        "exchange_endpoint": "https://oauth2.googleapis.com/token",
-        "api": "https://googleads.googleapis.com/v15",
-        "scopes": "https://www.googleapis.com/auth/adwords",
-    },
-    "apollo": {
-        # Apollo does not use OAuth; it uses an API key.
-        "authorize": "",  # Not used
-        "exchange_endpoint": "",  # Not used
-        "api": "https://api.apollo.io/v1",
-        "scopes": "",  # Not used
-    },
-}
-
-
-# Adapter registry
-adapters: dict[str, ProviderAdapter] = {
-    name: MailAdapter(name) for name in ("gmail", "outlook")
-}
-adapters.update(
-    {
-        "whatsapp": WhatsAppAdapter(),
-        "meta": UnavailableAdapter(),  # Will replace with real implementation below
-        "instagram": UnavailableAdapter(),
-        "linkedin": UnavailableAdapter(),
-        "google_ads": UnavailableAdapter(),
-        "apollo": UnavailableAdapter(),
-    }
-)
-
-
-# Now we implement the real adapters for meta, linkedin, google_ads, and apollo.
-# We will reuse the existing IntegrationAdapter classes from app/services/integration/adapter.py
-# for the sync and webhook handling parts, and implement OAuth connect/disconnect/refresh/health_check
-# where applicable.
-
-# First, let's import the necessary integration adapters.
-# We'll do it inside the adapter classes to avoid circular imports at module level.
-
-class MetaProviderAdapter:
-    """Meta (Facebook/Instagram) provider adapter for CRM integrations.
-    
-    Supports:
-    - Lead Ads synchronization (via Meta Lead Ads API)
-    - Optional: Facebook Page messaging and Instagram Direct messaging (not implemented in this version)
-    - Webhooks for lead ads and messaging
-    """
-    capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "send", "handle_webhook"}
-    )
-    # Meta Lead Ads API does not support idempotent send for lead synchronization (not applicable for sending messages via this adapter)
-    # Note: We are not implementing message sending via this adapter in this version.
-    idempotent_send = False
-
+class LinkedInProviderAdapter(OAuthProvider):
     def __init__(self, transport=None):
-        self.spec = SPECS["meta"]
-        self.transport = transport
-        # We'll lazily load the integration adapter to avoid circular imports
-        self._integration_adapter = None
-
-    @property
-    def integration_adapter(self):
-        if self._integration_adapter is None:
-            # Import here to avoid circular import
-            from app.services.integration.adapter import MetaAdapter
-            self._integration_adapter = MetaAdapter()
-        return self._integration_adapter
-
-    def configuration(self):
-        cfg = {
-            "access_token": os.environ.get("CRM_META_ACCESS_TOKEN", ""),
-            # For Lead Ads, we also need the ad account ID or page ID
-            "ad_account_id": os.environ.get("CRM_META_AD_ACCOUNT_ID", ""),
-            "page_id": os.environ.get("CRM_META_PAGE_ID", ""),
-            # For messaging (if implemented), we would need the phone number ID for WhatsApp or page ID for Facebook Messenger
-        }
-        if not cfg["access_token"]:
-            raise ProviderFailure("meta_not_configured")
-        return cfg
-
-    async def connect(self, code, verifier, redirect_uri):
-        # Meta uses OAuth 2.0
-        cfg = self.configuration()
-        if redirect_uri != os.environ.get("CRM_META_REDIRECT_URI", ""):
-            raise ProviderFailure("redirect_mismatch")
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_META_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_META_CLIENT_SECRET", ""),
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": os.environ.get("CRM_META_REDIRECT_URI", ""),
-            },
-        )
-
-    async def disconnect(self, token):
-        # Meta allows token revocation via the API
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                await client.delete(
-                    f"https://graph.facebook.com/v18.0/me/permissions",
-                    params={"access_token": token},
-                )
-        except Exception:
-            # Best effort
-            pass
-        return {"remote_revocation": True}
-
-    async def refresh(self, refresh_token):
-        # Meta uses long-lived tokens that can be refreshed
-        cfg = self.configuration()
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_META_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_META_CLIENT_SECRET", ""),
-                "grant_type": "fb_exchange_token",
-                "fb_exchange_token": refresh_token,
-            },
-        )
-
-    async def health_check(self, token):
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.get(
-                    f"https://graph.facebook.com/v18.0/me",
-                    params={"access_token": token},
-                )
-                data = response.json()
-                return {
-                    "connected": True,
-                    "address": data.get("name") or f"Facebook User ID {data.get('id')}",
-                }
-        except Exception:
-            return {"connected": False, "address": None}
-
-    async def send(self, token, message, idempotency_key):
-        # We are not implementing message sending via the Meta adapter in this version.
-        # If we wanted to send messages via Facebook Messenger or Instagram Direct, we would need to implement it here.
-        raise ProviderFailure("outbound_attachments_not_supported")  # Placeholder
-
-    async def sync(self, token, cursor=None):
-        # We are not implementing message synchronization for Meta in this version.
-        return {"messages": [], "cursor": None}
-
-    async def handle_webhook(self, payload):
-        # Delegate to the MetaIntegrationAdapter for parsing webhook events
-        return self.integration_adapter.get_webhook_events(payload, self.configuration().get("access_token", ""))
+        super().__init__("linkedin", transport)
 
 
-class LinkedInProviderAdapter:
-    """LinkedIn provider adapter for CRM integrations.
-    
-    Supports:
-    - Lead Gen Forms synchronization
-    - Webhooks for lead gen forms
-    """
-    capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "handle_webhook"}
-    )
-    # LinkedIn Lead Gen Forms API does not support idempotent send for lead synchronization
-    idempotent_send = False
+class GoogleAdsProviderAdapter(OAuthProvider):
+    capabilities = frozenset({"connect", "oauth", "disconnect", "refresh", "health_check", "sync", "handle_webhook"})
+    refresh = MailAdapter.refresh
+    disconnect = MailAdapter.disconnect
 
-    def __init__(self, transport=None):
-        self.spec = SPECS["linkedin"]
-        self.transport = transport
-        self._integration_adapter = None
+    def __init__(self, transport=None, config=None):
+        super().__init__("google_ads", transport)
+        self.config = config or {}
 
-    @property
-    def integration_adapter(self):
-        if self._integration_adapter is None:
-            from app.services.integration.adapter import LinkedInAdapter
-            self._integration_adapter = LinkedInAdapter()
-        return self._integration_adapter
-
-    def configuration(self):
-        cfg = {
-            "access_token": os.environ.get("CRM_LINKEDIN_ACCESS_TOKEN", ""),
-        }
-        if not cfg["access_token"]:
-            raise ProviderFailure("linkedin_not_configured")
-        return cfg
-
-    async def connect(self, code, verifier, redirect_uri):
-        cfg = self.configuration()
-        if redirect_uri != os.environ.get("CRM_LINKEDIN_REDIRECT_URI", ""):
-            raise ProviderFailure("redirect_mismatch")
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_LINKEDIN_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_LINKEDIN_CLIENT_SECRET", ""),
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": os.environ.get("CRM_LINKEDIN_REDIRECT_URI", ""),
-            },
-        )
-
-    async def disconnect(self, token):
-        # LinkedIn allows token revocation
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                await client.delete(
-                    f"https://api.linkedin.com/v2/oauth/accessToken",
-                    params={"access_token": token},
-                )
-        except Exception:
-            pass
-        return {"remote_revocation": True}
-
-    async def refresh(self, refresh_token):
-        cfg = self.configuration()
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_LINKEDIN_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_LINKEDIN_CLIENT_SECRET", ""),
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            },
-        )
-
-    async def health_check(self, token):
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.get(
-                    f"https://api.linkedin.com/v2/me",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                data = response.json()
-                return {
-                    "connected": True,
-                    "address": data.get("localizedFirstName") or f"LinkedIn User ID {data.get('id')}",
-                }
-        except Exception:
-            return {"connected": False, "address": None}
-
-    async def send(self, token, message, idempotency_key):
-        # LinkedIn messaging API is complex and not implemented in this version.
-        raise ProviderFailure("outbound_attachments_not_supported")
-
-    async def sync(self, token, cursor=None):
-        # We are not implementing message synchronization for LinkedIn in this version.
-        return {"messages": [], "cursor": None}
-
-    async def handle_webhook(self, payload):
-        return self.integration_adapter.get_webhook_events(payload, self.configuration().get("access_token", ""))
-
-
-class GoogleAdsProviderAdapter:
-    """Google Ads provider adapter for CRM integrations.
-    
-    Supports:
-    - Lead Form Extensions synchronization
-    """
-    capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "handle_webhook"}
-    )
-    # Google Ads Lead Form Extensions API does not support idempotent send for lead synchronization
-    idempotent_send = False
-
-    def __init__(self, transport=None):
-        self.spec = SPECS["google_ads"]
-        self.transport = transport
-        self._integration_adapter = None
-
-    @property
-    def integration_adapter(self):
-        if self._integration_adapter is None:
-            from app.services.integration.adapter import GoogleAdsAdapter
-            self._integration_adapter = GoogleAdsAdapter()
-        return self._integration_adapter
-
-    def configuration(self):
-        cfg = {
-            "access_token": os.environ.get("CRM_GOOGLE_ADS_ACCESS_TOKEN", ""),
-            # For Google Ads API, we also need a developer token and customer ID
-            "developer_token": os.environ.get("CRM_GOOGLE_ADS_DEVELOPER_TOKEN", ""),
-            "customer_id": os.environ.get("CRM_GOOGLE_ADS_CUSTOMER_ID", ""),
-        }
-        if not cfg["access_token"]:
+    def ads_config(self):
+        version = os.environ.get("CRM_GOOGLE_ADS_API_VERSION", "")
+        developer_token = os.environ.get("CRM_GOOGLE_ADS_DEVELOPER_TOKEN", "")
+        customer = str(self.config.get("customer_id", "")).replace("-", "")
+        if not re.fullmatch(r"v[0-9]{1,2}", version) or not developer_token or not customer.isdigit():
             raise ProviderFailure("google_ads_not_configured")
-        return cfg
+        return version, developer_token, customer
 
-    async def connect(self, code, verifier, redirect_uri):
-        # Google Ads uses OAuth 2.0
-        cfg = self.configuration()
-        if redirect_uri != os.environ.get("CRM_GOOGLE_ADS_REDIRECT_URI", ""):
-            raise ProviderFailure("redirect_mismatch")
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_GOOGLE_ADS_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_GOOGLE_ADS_CLIENT_SECRET", ""),
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": os.environ.get("CRM_GOOGLE_ADS_REDIRECT_URI", ""),
-            },
-        )
-
-    async def disconnect(self, token):
-        # Google OAuth tokens can be revoked
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                await client.post(
-                    "https://oauth2.googleapis.com/revoke",
-                    params={"token": token},
-                )
-        except Exception:
-            pass
-        return {"remote_revocation": True}
-
-    async def refresh(self, refresh_token):
-        cfg = self.configuration()
-        return await self.request(
-            "POST",
-            self.spec["exchange_endpoint"],
-            external_write=True,
-            data={
-                "client_id": os.environ.get("CRM_GOOGLE_ADS_CLIENT_ID", ""),
-                "client_secret": os.environ.get("CRM_GOOGLE_ADS_CLIENT_SECRET", ""),
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            },
-        )
+    async def query(self, token, query, page=None):
+        version, developer, customer = self.ads_config()
+        body = {"query": query}
+        if page:
+            body["pageToken"] = page
+        return await self.request("POST", f"https://googleads.googleapis.com/{version}/customers/{customer}/googleAds:search",
+                                  headers={"Authorization": "Bearer " + token, "developer-token": developer}, json=body)
 
     async def health_check(self, token):
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.get(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                data = response.json()
-                return {
-                    "connected": True,
-                    "address": data.get("email") or f"Google User ID {data.get('id')}",
-                }
-        except Exception:
-            return {"connected": False, "address": None}
-
-    async def send(self, token, message, idempotency_key):
-        # Google Ads does not support sending messages via this adapter.
-        raise ProviderFailure("outbound_attachments_not_supported")
+        data = await self.query(token, "SELECT customer.id, customer.descriptive_name FROM customer LIMIT 1")
+        rows = data.get("results", [])
+        if not rows:
+            raise ProviderFailure("customer_not_accessible")
+        return {"connected": True, "provider_account_id": str(rows[0]["customer"]["id"]), "address": rows[0]["customer"].get("descriptiveName")}
 
     async def sync(self, token, cursor=None):
-        # We are not implementing message synchronization for Google Ads in this version.
-        return {"messages": [], "cursor": None}
+        state = decode_cursor(cursor)
+        query = "SELECT lead_form_submission_data.id, lead_form_submission_data.submission_date_time, lead_form_submission_data.lead_form_submission_fields FROM lead_form_submission_data"
+        if state.get("since"):
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", state["since"]):
+                raise ProviderFailure("invalid_cursor")
+            query += " WHERE lead_form_submission_data.submission_date_time >= '" + state["since"] + "'"
+        # A date watermark deliberately overlaps the last day; provider IDs dedupe
+        # it so submissions arriving during pagination cannot be skipped.
+        started = state.get("started") or datetime.now(timezone.utc).date().isoformat()
+        data = await self.query(token, query, state.get("page"))
+        leads = []
+        for row in data.get("results", []):
+            value = row["leadFormSubmissionData"]
+            fields = {f["fieldType"]: f.get("fieldValue", "") for f in value.get("leadFormSubmissionFields", [])}
+            leads.append(normalize_lead(str(value["id"]), fields, "google_ads", value.get("submissionDateTime")))
+        page = data.get("nextPageToken")
+        return {"leads": leads, "cursor": encode_cursor({**state, "page": page, "started": started} if page else {"since": started}), "has_more": bool(page)}
 
     async def handle_webhook(self, payload):
-        # Google Ads Lead Form Extensions do not have native webhooks; they use polling.
-        # However, we can still return an empty list or handle if there is a webhook format.
-        return []
+        # Google Ads sends a shared google_key, not a cryptographic timestamp.
+        # Authentication is performed by ingress; event-id dedupe is permanent.
+        fields = {r["column_id"]: r.get("string_value", "") for r in payload.get("user_column_data", [])}
+        return [{"kind": "lead", "provider_event_id": str(payload["lead_id"]), "account_id": str(payload.get("form_id", "")),
+                 "lead": normalize_lead(str(payload["lead_id"]), fields, "google_ads", None)}]
 
 
-class ApolloProviderAdapter:
-    """Apollo provider adapter for CRM integrations.
-    
-    Supports:
-    - Lead and account enrichment and search
-    """
-    capabilities = frozenset(
-        {"connect", "disconnect", "refresh", "health_check", "sync", "handle_webhook"}
-    )
-    # Apollo API does not support idempotent send for lead enrichment/search
-    idempotent_send = False
+class ApolloProviderAdapter(OAuthProvider):
+    capabilities = frozenset({"configure", "disconnect", "health_check", "enrich"})
+    connect = refresh = sync = handle_webhook = UnavailableAdapter.unsupported
 
     def __init__(self, transport=None):
-        self.spec = SPECS["apollo"]
-        self.transport = transport
-        self._integration_adapter = None
-
-    @property
-    def integration_adapter(self):
-        if self._integration_adapter is None:
-            from app.services.integration.adapter import ApolloAdapter
-            self._integration_adapter = ApolloAdapter()
-        return self._integration_adapter
+        super().__init__("apollo", transport)
 
     def configuration(self):
-        cfg = {
-            "api_key": os.environ.get("CRM_APOLLO_API_KEY", ""),
-        }
-        if not cfg["api_key"]:
-            raise ProviderFailure("apollo_not_configured")
-        return cfg
-
-    async def connect(self, code, verifier, redirect_uri):
-        # Apollo does not use OAuth; it uses an API key.
-        # We'll treat the API key as the credential and ignore the OAuth flow.
-        # For the purpose of the framework, we'll just validate the API key.
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.spec['api']}/auth/health",
-                    headers={"Authorization": f"Bearer {cfg['api_key']}"},
-                )
-                if response.status_code != 200:
-                    raise ProviderFailure("invalid_api_key")
-        except httpx.HTTPError as e:
-            raise ProviderFailure("provider_connection_failed") from e
-        return {"status": "connected"}
-
-    async def disconnect(self, token):
-        # Apollo API keys cannot be revoked via the API; we just return success.
-        return {"remote_revocation": False}
-
-    async def refresh(self, refresh_token):
-        # Apollo does not use refresh tokens; we return the same API key.
-        cfg = self.configuration()
-        return {
-            "api_key": cfg["api_key"],
-        }
+        return {}
 
     async def health_check(self, token):
-        cfg = self.configuration()
-        try:
-            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.spec['api']}/auth/health",
-                    headers={"Authorization": f"Bearer {cfg['api_key']}"},
-                )
-                if response.status_code == 200:
-                    return {
-                        "connected": True,
-                        "address": "Apollo API",
-                    }
-                else:
-                    return {"connected": False, "address": None}
-        except Exception:
-            return {"connected": False, "address": None}
+        data = await self.request("GET", self.spec["api"] + "/auth/health", headers={"X-Api-Key": token})
+        if data.get("is_logged_in") is not True:
+            raise ProviderFailure("invalid_api_key")
+        return {"connected": True, "address": "Apollo API"}
 
-    async def send(self, token, message, idempotency_key):
-        # Apollo does not support sending messages via this adapter.
-        raise ProviderFailure("outbound_attachments_not_supported")
-
-    async def sync(self, token, cursor=None):
-        # We are not implementing message synchronization for Apollo in this version.
-        return {"messages": [], "cursor": None}
-
-    async def handle_webhook(self, payload):
-        # Apollo supports webhooks for contact updates.
-        # We'll delegate to the integration adapter.
-        return self.integration_adapter.get_webhook_events(payload, self.configuration().get("api_key", ""))
+    async def enrich(self, token, identity):
+        # This operation may consume plan credits. Runtime activation is separate
+        # from implementation and defaults off. Tests inject an external transport.
+        if self.transport is None and os.environ.get("CRM_APOLLO_ENRICHMENT_ENABLED") != "true":
+            raise ProviderFailure("credit_consuming_operation_disabled")
+        if not (identity.get("id") or identity.get("email")):
+            raise ProviderFailure("verified_identity_required")
+        params = {k: identity[k] for k in ("id", "email") if identity.get(k)}
+        params.update(reveal_personal_emails=False, reveal_phone_number=False)
+        data = await self.request("POST", self.spec["api"] + "/people/match", params=params, headers={"X-Api-Key": token})
+        person = data.get("person")
+        if not person or not person.get("id"):
+            return {"status": "not_found", "provider": "apollo", "person": None}
+        return {"status": "matched", "provider": "apollo", "provider_id": person["id"],
+                "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                "person": {k: person.get(k) for k in ("first_name", "last_name", "email", "email_status", "title", "linkedin_url", "organization_id")}}
 
 
-# Update the adapters dictionary with the real implementations
-adapters["meta"] = MetaProviderAdapter()
-adapters["linkedin"] = LinkedInProviderAdapter()
-adapters["google_ads"] = GoogleAdsProviderAdapter()
-adapters["apollo"] = ApolloProviderAdapter()
-# Note: instagram remains UnavailableAdapter for now
+def normalize_lead(provider_id, fields, provider, occurred_at):
+    fields = {str(k).lower(): v for k, v in fields.items()}
+    return {"provider_id": provider_id, "provider": provider, "email": fields.get("email") or fields.get("work_email"),
+            "phone": fields.get("phone_number"), "first_name": fields.get("first_name") or fields.get("full_name") or "New",
+            "last_name": fields.get("last_name") or "Lead", "occurred_at": occurred_at,
+            "email_verified": False, "phone_verified": False}
+
+
+def normalize_meta_lead(row):
+    fields = {f["name"]: next(iter(f.get("values", [])), "") for f in row.get("field_data", [])}
+    return normalize_lead(str(row["id"]), fields, "meta", row.get("created_time"))
+
+
+SPECS = {
+    "gmail": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "exchange_endpoint": "https://oauth2.googleapis.com/token",
+              "api": "https://gmail.googleapis.com/gmail/v1", "scopes": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send"},
+    "outlook": {"authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", "exchange_endpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                "api": "https://graph.microsoft.com/v1.0", "scopes": "offline_access User.Read Mail.ReadWrite Mail.Send"},
+    "linkedin": {"authorize": "https://www.linkedin.com/oauth/v2/authorization", "exchange_endpoint": "https://www.linkedin.com/oauth/v2/accessToken",
+                 "api": "https://api.linkedin.com/v2", "scopes": "openid profile email"},
+    "google_ads": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "exchange_endpoint": "https://oauth2.googleapis.com/token",
+                   "api": "https://googleads.googleapis.com", "scopes": "https://www.googleapis.com/auth/adwords"},
+    "meta": {"scopes": "pages_show_list,pages_read_engagement,leads_retrieval"},
+    "instagram": {"scopes": "instagram_basic,instagram_manage_messages,pages_manage_metadata"},
+    "whatsapp": {}, "apollo": {"api": "https://api.apollo.io/api/v1"},
+}
+
+adapters = {"gmail": MailAdapter("gmail"), "outlook": MailAdapter("outlook"), "meta": MetaProviderAdapter(),
+            "instagram": InstagramProviderAdapter(), "linkedin": LinkedInProviderAdapter(), "google_ads": GoogleAdsProviderAdapter(),
+            "whatsapp": WhatsAppAdapter(), "apollo": ApolloProviderAdapter()}
+
 
 def adapter_for(integration):
-    name = (integration.config or {}).get(
-        "provider", getattr(integration.type, "value", integration.type)
-    )
+    import copy
+    name = (integration.config or {}).get("provider", getattr(integration.type, "value", integration.type))
     if name not in adapters:
         raise ProviderFailure("provider_unavailable")
-    return adapters[name]
+    adapter = adapters[name]
+    # Config is per integration, never put tenant state into the shared registry.
+    if type(adapter) in {MetaProviderAdapter, InstagramProviderAdapter, WhatsAppAdapter, GoogleAdsProviderAdapter}:
+        adapter = copy.copy(adapter)
+        adapter.config = integration.config or {}
+    return adapter
+
+
+def provider_state(integration):
+    try:
+        adapter = adapter_for(integration)
+    except ProviderFailure:
+        return "unavailable"
+    state = getattr(integration.status, "value", integration.status)
+    if state in {"connected", "expired", "error"}:
+        return "degraded" if state == "connected" and integration.last_sync_error else state
+    try:
+        adapter.configuration()
+    except ProviderFailure:
+        return "unavailable"
+    return "configured"

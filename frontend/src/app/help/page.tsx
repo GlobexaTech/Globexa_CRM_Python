@@ -49,6 +49,15 @@ export default function HelpPage() {
               execution logs show the persisted outcome. Retry is offered only
               when the backend supports a safe retry.
             </p>
+            <p className="mt-3">
+              AI Workforce runs bounded tasks. Supervisor coordinates approved
+              tools and displays the actual child results. Approval Center
+              requires an independent reviewer for the exact proposed action.
+              Approved does not mean executed or delivered.
+            </p>
+            <Link href="/ai-workforce" className="crm-secondary mt-4">
+              Open AI Workforce
+            </Link>
           </article>
         </div>
       </section>

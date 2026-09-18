@@ -95,6 +95,7 @@ async def analytics(db, tenant_id, actor_id, view, start=None, end=None):
                         func.sum(AIUsageLog.total_tokens),
                         func.sum(AIUsageLog.estimated_cost_usd),
                         func.count().filter(AIUsageLog.estimated_cost_usd.is_(None)),
+                        func.count().filter(AIUsageLog.total_tokens.is_(None)),
                     ).where(AIUsageLog.tenant_id == tenant_id),
                     AIUsageLog,
                 ).group_by(AIUsageLog.success)
@@ -108,6 +109,7 @@ async def analytics(db, tenant_id, actor_id, view, start=None, end=None):
                     "tokens": r[2],
                     "known_cost_usd": r[3],
                     "unpriced_requests": r[4],
+                    "unmeasured_requests": r[5],
                 }
                 for r in rows
             ]

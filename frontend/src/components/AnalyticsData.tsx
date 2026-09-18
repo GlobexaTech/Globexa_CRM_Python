@@ -137,6 +137,7 @@ export function AnalyticsData({
               <th>Tokens</th>
               <th>Known cost (USD)</th>
               <th>Unpriced requests</th>
+              <th>Requests without token measurements</th>
             </tr>
           </thead>
           <tbody>
@@ -144,13 +145,14 @@ export function AnalyticsData({
               <tr key={String(row.success)}>
                 <td>{row.success ? "Successful" : "Failed"}</td>
                 <td>{row.requests}</td>
-                <td>{row.tokens ?? 0}</td>
+                  <td>{row.tokens ?? "Unavailable"}</td>
                 <td>
                   {row.known_cost_usd == null
                     ? "Unavailable"
                     : Number(row.known_cost_usd).toFixed(4)}
                 </td>
                 <td>{row.unpriced_requests}</td>
+                <td>{row.unmeasured_requests ?? "Not reported"}</td>
               </tr>
             ))}
           </tbody>

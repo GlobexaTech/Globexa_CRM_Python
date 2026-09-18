@@ -500,6 +500,8 @@ async def get_ai_usage_analytics(
             func.sum(AIUsageLog.total_tokens).label("tokens"),
             func.sum(AIUsageLog.estimated_cost_usd).label("cost"),
             func.avg(AIUsageLog.latency_ms).label("avg_latency"),
+            func.count().filter(AIUsageLog.total_tokens.is_(None)).label("unmeasured_requests"),
+            func.count().filter(AIUsageLog.estimated_cost_usd.is_(None)).label("unpriced_requests"),
         )
         .where(
             AIUsageLog.tenant_id == tenant_id,
@@ -515,6 +517,8 @@ async def get_ai_usage_analytics(
             func.count().label("count"),
             func.sum(AIUsageLog.total_tokens).label("tokens"),
             func.sum(AIUsageLog.estimated_cost_usd).label("cost"),
+            func.count().filter(AIUsageLog.total_tokens.is_(None)).label("unmeasured_requests"),
+            func.count().filter(AIUsageLog.estimated_cost_usd.is_(None)).label("unpriced_requests"),
         )
         .where(
             AIUsageLog.tenant_id == tenant_id,
@@ -530,6 +534,8 @@ async def get_ai_usage_analytics(
             func.count().label("count"),
             func.sum(AIUsageLog.total_tokens).label("tokens"),
             func.sum(AIUsageLog.estimated_cost_usd).label("cost"),
+            func.count().filter(AIUsageLog.total_tokens.is_(None)).label("unmeasured_requests"),
+            func.count().filter(AIUsageLog.estimated_cost_usd.is_(None)).label("unpriced_requests"),
         )
         .where(
             AIUsageLog.tenant_id == tenant_id,
@@ -545,9 +551,11 @@ async def get_ai_usage_analytics(
             {
                 "task_type": row[0].value,
                 "count": row[1],
-                "tokens": row[2] or 0,
-                "cost_usd": float(row[3] or 0),
+                "tokens": row[2],
+                "cost_usd": float(row[3]) if row[3] is not None else None,
                 "avg_latency_ms": float(row[4] or 0),
+                "unmeasured_requests": row[5],
+                "unpriced_requests": row[6],
             }
             for row in task_result.fetchall()
         ],
@@ -555,8 +563,10 @@ async def get_ai_usage_analytics(
             {
                 "provider": row[0].value,
                 "count": row[1],
-                "tokens": row[2] or 0,
-                "cost_usd": float(row[3] or 0),
+                "tokens": row[2],
+                "cost_usd": float(row[3]) if row[3] is not None else None,
+                "unmeasured_requests": row[4],
+                "unpriced_requests": row[5],
             }
             for row in provider_result.fetchall()
         ],
@@ -564,8 +574,10 @@ async def get_ai_usage_analytics(
             {
                 "date": row[0].isoformat() if row[0] else None,
                 "count": row[1],
-                "tokens": row[2] or 0,
-                "cost_usd": float(row[3] or 0),
+                "tokens": row[2],
+                "cost_usd": float(row[3]) if row[3] is not None else None,
+                "unmeasured_requests": row[4],
+                "unpriced_requests": row[5],
             }
             for row in daily_result.fetchall()
         ],

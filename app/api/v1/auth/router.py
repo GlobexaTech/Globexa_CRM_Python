@@ -160,12 +160,19 @@ async def update_current_user(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: tuple[User, Membership] = Depends(get_current_active_user),
 ):
-    """Logout - client should discard tokens."""
+    """Revoke this signed session family, including its remaining refresh tokens."""
     user, membership = current_user
+    from app.core.security import decode_token
+    from app.core.token_sessions import revoke_session
+    payload = decode_token(request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+    if payload is None:
+        raise HTTPException(401, "Invalid authentication context")
+    await revoke_session(payload)
     await AuthService(db)._audit_log(membership.tenant_id, user.id, "auth.logout", "user", str(user.id))
     return {"message": "Successfully logged out"}
 

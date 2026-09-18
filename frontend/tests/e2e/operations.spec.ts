@@ -493,11 +493,30 @@ test("provider capabilities, OAuth callback, refresh, sync history and disconnec
   page,
   context,
 }) => {
-  await apiLogin(context);
+  const session = await apiLogin(context);
+  const catalog = await bodyOf<
+    { provider: string; capabilities: string[]; live_verified: boolean }[]
+  >(page, session, "/operations/providers");
   await page.goto("/integrations");
-  await expect(
-    page.getByText("Not available in this release", { exact: true }),
-  ).toHaveCount(6);
+  // CP5/6 implements additional providers; assert the actual catalog contract
+  // instead of retaining CP4's six deliberately unsupported adapters.
+  expect(catalog.length).toBeGreaterThanOrEqual(8);
+  for (const provider of catalog) {
+    const catalogCard = page
+      .locator("article")
+      .filter({
+        has: page.getByRole("heading", {
+          name: provider.provider.replaceAll("_", " "),
+          exact: true,
+        }),
+      });
+    await expect(catalogCard).toContainText(
+      provider.capabilities.length
+        ? "Capabilities:"
+        : "Not available in this release",
+    );
+    expect(provider.live_verified).toBe(false);
+  }
   const name = "OAuth E2E " + randomUUID();
   await page.getByRole("button", { name: "Add gmail integration" }).click();
   const dialog = page.getByRole("dialog", {

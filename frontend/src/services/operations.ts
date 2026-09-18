@@ -52,11 +52,19 @@ export const operations = {
   toggleWorkflow: (id: string, enabled: boolean) =>
     api.patch<Workflow>(`/operations/workflows/${id}/enabled`, { enabled }),
   retryJob: (id: string) => api.post<Job>(`/operations/jobs/${id}/retry`),
-  createIntegration: (provider: string, name: string) =>
+  createIntegration: (
+    provider: string,
+    name: string,
+    config: Record<string, string> = {},
+  ) =>
     api.post<{ id: string }>("/integrations", {
-      type: "email_inbox",
+      type: ["gmail", "outlook"].includes(provider)
+        ? "email_inbox"
+        : provider === "instagram"
+          ? "other"
+          : provider,
       name,
-      config: { provider },
+      config: { ...config, provider },
       sync_enabled: false,
       sync_frequency_minutes: 60,
     }),
@@ -64,6 +72,21 @@ export const operations = {
     api.post<{ authorization_url: string; expires_in: number }>(
       `/operations/integrations/${id}/authorize`,
     ),
+  storeCredential: (
+    id: string,
+    credentials: Record<string, string>,
+    name: string,
+  ) =>
+    api.post<{ id: string }>(`/integrations/${id}/credentials`, {
+      name,
+      credentials,
+    }),
+  configure: (id: string, credentialId: string) =>
+    api.post<{ status: string }>(`/integrations/${id}/configure`, {
+      credential_id: credentialId,
+    }),
+  cancelSync: (id: string) =>
+    api.post<{ status: string }>(`/integrations/sync-jobs/${id}/cancel`),
   callback: (id: string, body: { state: string; code: string }) =>
     api.post<{ id: string; status: string }>(
       `/operations/integrations/${id}/callback`,
@@ -75,12 +98,10 @@ export const operations = {
     api.post<{ status: string; remote_revocation: boolean }>(
       `/operations/integrations/${id}/disconnect`,
     ),
-  sync: (id: string, idempotencyKey: string, cursor?: string) =>
-    api.post<Job>(
-      `/operations/integrations/${id}/sync${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
-      undefined,
-      { idempotencyKey },
-    ),
+  sync: (id: string, idempotencyKey: string) =>
+    api.post<Job>(`/operations/integrations/${id}/sync`, undefined, {
+      idempotencyKey,
+    }),
   ai: (capability: AICapability, entity_id: string, idempotencyKey: string) =>
     api.post<Job>(
       "/operations/ai/requests",
@@ -97,6 +118,7 @@ export function choiceLabel(item: {
   id: string;
   title?: string;
   name?: string;
+  subject?: string;
   first_name?: string;
   last_name?: string;
   email?: string;
@@ -104,6 +126,7 @@ export function choiceLabel(item: {
   return (
     item.title ||
     item.name ||
+    item.subject ||
     [item.first_name, item.last_name].filter(Boolean).join(" ") ||
     item.email ||
     item.id

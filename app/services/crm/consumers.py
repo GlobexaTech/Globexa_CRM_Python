@@ -57,6 +57,8 @@ class CRMSubscriber:
     async def handle(self, db, event):
         from app.services.crm.automation import trigger_workflows
 
+        if event.event_type == "webhook.received" and event.payload.get("receipt_pipeline"):
+            return  # Durable receipt worker alone normalizes signed ingress.
         if "webhook_id" in event.payload:
             endpoint = await owned(
                 db, WebhookEndpoint, event.tenant_id, UUID(event.payload["webhook_id"])
@@ -165,6 +167,7 @@ class CRMSubscriber:
 
 
 def install_subscribers():
-    for consumer in (AnalyticsSubscriber(), CRMSubscriber()):
+    from app.services.ai.agent import WorkforceSubscriber
+    for consumer in (AnalyticsSubscriber(), CRMSubscriber(), WorkforceSubscriber()):
         if consumer.name not in subscribers:
             register_subscriber(consumer)

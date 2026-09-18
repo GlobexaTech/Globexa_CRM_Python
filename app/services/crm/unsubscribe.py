@@ -3,9 +3,25 @@
 import os
 from datetime import timedelta
 import jwt
+from uuid import UUID
 from fastapi import HTTPException
 from app.core.config import get_settings
 from app.services.crm.common import now
+
+
+def decode_unsubscribe_token(token):
+    """Validate only the narrow email-preference capability, never an auth JWT."""
+    settings = get_settings().security
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm],
+                             options={"require": ["exp", "sub", "tenant_id", "type"]})
+        if payload["type"] != "unsubscribe":
+            return None
+        UUID(payload["sub"])
+        UUID(payload["tenant_id"])
+        return payload
+    except (jwt.InvalidTokenError, ValueError, TypeError, AttributeError):
+        return None
 
 
 def unsubscribe_url(tenant_id, contact_id):

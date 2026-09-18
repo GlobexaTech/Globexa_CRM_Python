@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse
 from app.core.database import AsyncSessionLocal
 from app.core.security import decode_token
 from app.models import Membership, Tenant, User
-from app.core.tenant_context import tenant_context
+from app.core.tenant_context import tenant_context, current_user
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -55,6 +55,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
         )
         if not payload or payload.get("type") != "access":
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        from app.core.token_sessions import session_active
+        try:
+            if not await session_active(payload):
+                return JSONResponse(status_code=401, content={"detail": "Session has been revoked"})
+        except HTTPException:
+            return JSONResponse(status_code=503, content={"detail": "Authentication state unavailable"})
 
         try:
             actor = UUID(str(payload["sub"]))
@@ -62,25 +68,24 @@ class TenantMiddleware(BaseHTTPMiddleware):
         except (ValueError, KeyError, TypeError):
             return JSONResponse(status_code=401, content={"detail": "Invalid authentication context"})
 
-        tenant = await self._resolve_tenant(request)
-        if not tenant:
-            return JSONResponse(status_code=400, content={"detail": "Tenant not found"})
-        if not tenant.is_active or tenant.id != token_tenant:
-            return JSONResponse(status_code=403, content={"detail": "Tenant context mismatch"})
-
-        error = await self._validate_tenant_context(request, tenant)
-        if error:
-            return JSONResponse(status_code=403, content={"detail": error})
-
-        request.state.tenant = tenant
-        request.state.tenant_id = tenant.id
-
-        # IMPORTANT: do not create a disposable session here. The route's
-        # AsyncSession must receive the context on its own PostgreSQL
-        # transaction/connection. tenant_context() sets ContextVars and the
-        # Session.after_begin hook applies them with SET LOCAL.
-        with tenant_context(tenant.id, actor):
-            return await call_next(request)
+        # Identity discovery must run as the verified JWT subject. Tenant RLS
+        # permits only that subject's memberships until the tenant is validated.
+        identity_token = current_user.set(actor)
+        try:
+            tenant = await self._resolve_tenant(request)
+            if not tenant:
+                return JSONResponse(status_code=400, content={"detail": "Tenant not found"})
+            if not tenant.is_active or tenant.id != token_tenant:
+                return JSONResponse(status_code=403, content={"detail": "Tenant context mismatch"})
+            error = await self._validate_tenant_context(request, tenant)
+            if error:
+                return JSONResponse(status_code=403, content={"detail": error})
+            request.state.tenant = tenant
+            request.state.tenant_id = tenant.id
+            with tenant_context(tenant.id, actor):
+                return await call_next(request)
+        finally:
+            current_user.reset(identity_token)
 
     async def _validate_tenant_context(
         self,

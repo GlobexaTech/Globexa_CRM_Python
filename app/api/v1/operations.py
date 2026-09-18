@@ -407,6 +407,8 @@ async def providers(actor=Depends(identity), db=Depends(get_db)):
             "provider": name,
             "capabilities": sorted(a.capabilities),
             "live_verified": False,
+            "credential_required": True,
+            "authentication": "oauth" if "oauth" in a.capabilities else "api_credential",
         }
         for name, a in adapters.items()
     ]
@@ -454,15 +456,21 @@ async def integration_status(
         .order_by(OAuthToken.created_at.desc())
         .limit(1)
     )
+    from app.services.crm.providers import provider_state
+    from app.models import IntegrationCredential
+    credential = await db.scalar(select(IntegrationCredential).where(
+        IntegrationCredential.tenant_id == actor[0], IntegrationCredential.integration_id == row.id,
+        IntegrationCredential.is_active.is_(True)).limit(1))
+    expiry = token.expires_at if token else credential.token_expires_at if credential else None
     return {
         "id": row.id,
         "status": row.status.value,
+        "provider_state": "expired" if expiry and expiry <= now() else provider_state(row),
         "capabilities": sorted(adapter_for(row).capabilities),
-        "expires_at": token.expires_at if token else None,
-        "expired": token is None
-        or token.expires_at is None
-        or token.expires_at <= now(),
+        "expires_at": expiry,
+        "expired": bool(expiry and expiry <= now()),
     }
+
 
 
 @router.post("/integrations/{integration_id}/refresh", response_model=dict)

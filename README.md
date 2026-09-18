@@ -2,7 +2,7 @@
 
 Multi-tenant AI-powered Sales CRM built with FastAPI, SQLAlchemy, Celery, and Next.js.
 
-Checkpoint 4 connects the approved UI Lab to the authenticated CRM backend. See the [frontend setup and security guide](frontend/README.md), [Checkpoint 4 implementation report](CHECKPOINT_4_REPORT.md), [frontend audit](CHECKPOINT_4_FRONTEND_AUDIT.md) and [requirement traceability](CHECKPOINT_4_TRACEABILITY.md) for implementation details, verification and capability limits.
+Checkpoint 5 + 6 adds provider operations, six controlled AI agents, Supervisor, independent approvals, retained memory, and security hardening. Start with the [implementation report](CHECKPOINT_5_6_REPORT.md), [requirement traceability](CHECKPOINT_5_6_TRACEABILITY.md), [provider capability matrix](docs/checkpoint56/PROVIDER_CONTRACTS.md), and [frontend setup](frontend/README.md). Live provider certification requires credentials and is separate from the automated implementation gate. The [Checkpoint 4 report](CHECKPOINT_4_REPORT.md) records the preceding UI integration.
 
 ## Features
 
@@ -11,7 +11,8 @@ Checkpoint 4 connects the approved UI Lab to the authenticated CRM backend. See 
 - **Package-based entitlements**: Flexible feature flags and limits (not hard-coded)
 - **AI Router**: Local (Ollama) + Cloud (NVIDIA NIM, OpenAI, Anthropic) with usage ledger
 - **Background Workers**: Celery + Redis for campaigns, AI jobs, integrations
-- **Email Provider Abstraction**: Resend, Gmail, Microsoft Graph, SMTP
+- **Provider operations**: Gmail, Outlook, WhatsApp, Meta, Instagram, LinkedIn OIDC, Google Ads and opt-in Apollo enrichment, with explicit per-provider capability limits
+- **AI workforce**: Durable agent/Supervisor execution, sixteen permission-checked tools and independently approved mutations
 - **Frontend**: Next.js 16.3.3 + React 19.2.8 + TypeScript + Tailwind CSS + TanStack Query, with shared accessible CRM components
 - **Browser sessions**: Opaque HttpOnly cookies backed by encrypted Redis sessions; backend tokens remain on the server
 
@@ -22,7 +23,8 @@ Checkpoint 4 connects the approved UI Lab to the authenticated CRM backend. See 
 ```bash
 # Copy environment file
 cp .env.example .env
-# Edit .env with your values (especially SECRET_KEY)
+# Supply DATABASE_PASSWORD, SECURITY_SECRET_KEY and a separate
+# SECURITY_CREDENTIAL_ENCRYPTION_KEY; see .env.example generation notes.
 
 # Start the backend and its supporting services
 docker-compose up -d

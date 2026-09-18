@@ -18,6 +18,7 @@ export interface Choice {
   id: string;
   title?: string;
   name?: string;
+  subject?: string;
   first_name?: string;
   last_name?: string;
   email?: string;
@@ -160,6 +161,7 @@ export interface Provider {
   provider: string;
   capabilities: string[];
   live_verified: boolean;
+  provider_state?: string;
 }
 export interface Integration {
   id: string;
@@ -171,6 +173,9 @@ export interface Integration {
   last_sync_at: string | null;
   last_sync_status: string | null;
   records_synced: number;
+  provider?: string;
+  provider_state?: string;
+  capabilities?: string[];
 }
 export interface IntegrationStatus {
   id: string;

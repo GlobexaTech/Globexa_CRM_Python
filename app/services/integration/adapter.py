@@ -972,8 +972,7 @@ class EmailInboxAdapter(IntegrationAdapter):
         return "email_inbox"
 
     async def validate_credentials(self, credentials: Dict[str, Any]) -> bool:
-        # Would validate IMAP/SMTP credentials
-        return True
+        raise NotImplementedError("Use the capability-based Gmail or Outlook OAuth adapter")
 
     async def sync_leads(
         self,
@@ -985,7 +984,7 @@ class EmailInboxAdapter(IntegrationAdapter):
         """Parse emails from inbox for leads."""
         # This would connect via IMAP and parse emails
         # Simplified implementation
-        return SyncResult(success=True, message="Email inbox sync not fully implemented")
+        raise NotImplementedError("Use the durable Gmail or Outlook sync pipeline")
 
     async def get_webhook_events(self, payload: Dict[str, Any], secret: str) -> List[Dict[str, Any]]:
         """Parse inbound email webhook (e.g., from Resend, SendGrid, etc.)."""

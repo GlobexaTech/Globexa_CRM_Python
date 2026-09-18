@@ -337,6 +337,7 @@ async def test_sync_inbound_conversation_unread_and_replay(client, db_session, c
             "provider_message_id": "incoming-1",
             "thread_id": "thread-1",
             "sender": "alice@example.com",
+            "email_verified": True,  # The deterministic provider fixture attests this address.
             "recipient": "sales@example.com",
             "subject": "Question about Acme",
             "body": "Can we meet?",

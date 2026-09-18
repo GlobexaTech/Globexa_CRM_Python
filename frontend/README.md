@@ -4,7 +4,7 @@ The approved UI Lab is connected to the Python CRM through a Next.js backend-for
 
 ## Configuration and startup
 
-Use Node.js 24, the versions in package-lock.json, a migrated Python backend and Redis 7. The backend must include the Checkpoint 4 contract fixes, including GET /api/v1/auth/permissions. The unchanged Checkpoint 3 SHA alone does not provide that endpoint; consult the Checkpoint 4 report for the exact backend differences and gate result.
+Use Node.js 24, the versions in package-lock.json, a migrated Checkpoint 5/6 Python backend and Redis 7. Keep frontend and backend on the same repository revision: the workforce, approvals, provider histories and configuration routes extend the Checkpoint 4 contracts.
 
 From frontend, run npm ci and copy .env.example to .env.local. Supply these variables through private server configuration; never prefix them with NEXT_PUBLIC_.
 
@@ -36,7 +36,7 @@ For development against a nonproduction backend, explicitly set APP_ORIGIN=http:
 5. Workspace changes validate membership and call the real backend switch-tenant endpoint. The browser cancels requests, removes tenant query/mutation state, changes its generation and remounts workspace content. Late results from the prior generation are rejected. Cross-tab messages contain invalidation hints only.
 6. Redis locks serialize refresh, workspace transitions and proxied requests across frontend instances. Redis commands have a three-second deadline and do not queue offline. Backend calls have an eight-second timeout; the browser client defaults to thirty seconds. A timeout can occur after a mutation reached the backend, so the UI asks the user to check saved/job state before retrying.
 7. Only a backend authentication rejection can cause one bounded replay after refresh. Network timeouts and uncertain writes do not automatically replay. Durable operations use backend idempotency keys and display queued, running, completed, failed, unknown or unavailable states.
-8. Logout deletes the Redis session before contacting the backend and clears the cookie even if that backend call fails. If Redis itself is unavailable, the browser clears local state and explicitly reports that server sign-out was not confirmed. The existing backend logout records an audit event; it does not revoke every independently issued JWT outside this BFF session.
+8. Logout deletes the Redis session before contacting the backend and clears the cookie even if that backend call fails. If Redis itself is unavailable, the browser clears local state and explicitly reports that server sign-out was not confirmed. Backend logout also revokes that JWT session family's access and refresh tokens. Other independent logins remain active. Refresh rotation is single-use; replay revokes the family. Old tokens without session identifiers require a fresh login after upgrading.
 
 SessionProvider supplies session/loading/error/can/login/logout/switchTenant/refreshSession. The shared API client supplies typed get/post/put/patch/delete, cancellation, deadlines, field errors and Retry-After. Query keys contain tenant_id, version and path. Components use these boundaries rather than direct backend fetches or localStorage CRM stores.
 
@@ -55,9 +55,27 @@ npm run build
 
 Auth store tests use real Redis. Point FRONTEND_REDIS_URL at a disposable test database before npm run test:unit.
 
+## Checkpoint 5/6 product surfaces
+
+The fourth domain service, `src/services/workforce.ts`, uses the same authenticated BFF, tenant/version cache keys, mutation-origin checks and error handling as the original three services. Production CRM or agent state is never stored in localStorage.
+
+| Surface | Backend behavior |
+| --- | --- |
+| `/ai-workforce` | Reads the permission-filtered agent/tool catalog; queues a bounded objective with an idempotency key; polls persisted executions; supports cancellation and server-authorized safe retry. Related CRM records and explicit research URLs are supplied by the user. |
+| `/supervisor` | Queues supervisor objectives and displays actual child states and the stored consolidated result. |
+| `/approvals` | Shows immutable proposed actions, target and fingerprint. Decisions transmit the original hash; the server enforces independent human approval, current permissions, expiry and unchanged targets. Approval, execution and provider delivery are displayed separately. |
+| Agent memory | Proposes bounded long-term memory for independent approval, displays retention and supports deletion. Working memory is distinguished from approved memory. |
+| `/integrations` | Reads actual provider capabilities/configuration, handles OAuth or encrypted API credentials, verifies provider health, shows resumable sync jobs and inbound receipts, and cancels active syncs. Provider cursors are server-owned. |
+| `/conversations` | Email and WhatsApp forms use provider-linked conversations; sent, delivered, read, failed and unknown are sourced from persisted backend state. Unknown operations are not automatically resent. |
+| Customer 360 | Displays executions tied to a lead/contact and opens new agent tasks with that exact customer context. |
+
+The credential form sends API keys/tokens directly to the authenticated backend credential endpoint for encryption. Its secret field is cleared immediately after storage and never put into browser persistent storage or query parameters. A stored credential alone does not mark a provider connected.
+
+`tests/e2e/workforce.spec.ts` exercises actual queued executions, supervisor children, independent memory approval/deletion, exact-action tampering rejection, tenant isolation, the draft → approval → send → conversation → Customer 360 flow, and all three new routes at four viewport sizes. Only the external model/mail responses are deterministic substitutes; API authorization, PostgreSQL, RLS, Celery, approvals and mutations execute normally. The fixture model's chat responses deliberately omit usage counts when no measurement exists.
+
 ## Reproducible browser integration environment
 
-The test bootstrap is separate from the production application. It refuses any APP_ENVIRONMENT other than testing and any database name outside the globexa_cp4 namespace. Run from the repository root with the project's Python environment and a migration-administrator connection to disposable PostgreSQL.
+The test bootstrap is separate from the production application. It refuses any APP_ENVIRONMENT other than testing and any database name outside the globexa_cp4 or globexa_cp56 namespaces. Run from the repository root with the project's Python environment and a migration-administrator connection to disposable PostgreSQL.
 
 Example POSIX environment; use equivalent PowerShell $env: assignments on Windows:
 

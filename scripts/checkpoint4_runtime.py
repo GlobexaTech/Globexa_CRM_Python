@@ -24,14 +24,14 @@ def load_environment():
         raise RuntimeError("The E2E runtime requires explicit APP_ENVIRONMENT=testing")
     settings_file = ROOT / "evidence" / "runtime.env.json"
     values = json.loads(settings_file.read_text(encoding="utf-8"))
-    if values.get("APP_ENVIRONMENT") != "testing" or not values.get("DATABASE_NAME", "").startswith("globexa_cp4"):
+    if values.get("APP_ENVIRONMENT") != "testing" or not values.get("DATABASE_NAME", "").startswith(("globexa_cp4", "globexa_cp56")):
         raise RuntimeError("Refusing to launch E2E adapters outside an isolated CP4 database")
     os.environ.update(values)
     os.chdir(ROOT)
 
 
 def install_external_adapters():
-    if os.environ.get("APP_ENVIRONMENT") != "testing" or not os.environ.get("DATABASE_NAME", "").startswith("globexa_cp4"):
+    if os.environ.get("APP_ENVIRONMENT") != "testing" or not os.environ.get("DATABASE_NAME", "").startswith(("globexa_cp4", "globexa_cp56")):
         raise RuntimeError("External adapter fixtures are restricted to the isolated E2E runtime")
     from app.services.crm.providers import MailAdapter, ProviderFailure, adapters
     from app.services.ai.gateway import AIGateway, Generation, ModelRoute
@@ -82,6 +82,36 @@ def install_external_adapters():
             # Conform to the configured external-provider lifecycle: the real
             # gateway closes this client after execution. generate sends no HTTP.
             self.client = httpx.AsyncClient(timeout=1, follow_redirects=False)
+
+        async def chat(self, model, messages, **kwargs):
+            """Synthetic model contract only; every tool, approval and send stays real."""
+            prompt = json.loads(messages[-1]["content"])
+            objective = prompt.get("objective", "")
+            instruction = prompt.get("instruction", "")
+            if "[ai-provider-failure]" in objective:
+                raise RuntimeError("fixture_external_provider_unavailable")
+            if instruction.startswith("Decompose"):
+                output = {"summary": "Prepare two bounded reviews", "subtasks": [
+                    {"agent_name": "research", "objective": "Review the supplied customer context"},
+                    {"agent_name": "analyst", "objective": "Summarize the supplied customer context"},
+                ]}
+            elif instruction.startswith("Summarize"):
+                results = prompt["UNTRUSTED_DATA"]
+                output = {"summary": "; ".join(f"{row['agent']}: {row['state']}" for row in results)}
+            else:
+                reference = prompt.get("UNTRUSTED_DATA", {})
+                context = reference.get("context", {})
+                actions = []
+                if objective.startswith("[cp56-send-review]") and not reference.get("observations"):
+                    values = json.loads(objective.removeprefix("[cp56-send-review]").strip())
+                    arguments = {"conversation_id": context["entity_id"], "body": values["body"]}
+                    actions = [
+                        {"name": "draft_email", "arguments": arguments},
+                        {"name": "send_email", "arguments": {**arguments, "recipient": values["recipient"]}},
+                    ]
+                output = {"summary": "Prepared a review of the supplied context; proposed actions require independent approval.", "actions": actions}
+            # The synthetic chat contract supplies no usage measurements.
+            return Generation(json.dumps(output))
 
         async def generate(self, model, prompt):
             if "[ai-provider-failure]" in prompt:

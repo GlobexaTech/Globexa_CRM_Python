@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select, func
 from app.core.database import get_db
-from app.core.security import decode_token
+from app.services.crm.unsubscribe import decode_unsubscribe_token
 from app.core.tenant_context import bind_context
 from app.models import Contact, SuppressionList
 from app.services.crm.common import owned, audit
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/unsubscribe", tags=["Email preferences"])
 
 
 def validate(token):
-    payload = decode_token(token)
+    payload = decode_unsubscribe_token(token)
     if not payload or payload.get("type") != "unsubscribe":
         raise HTTPException(400, "Unsubscribe link is invalid or expired")
     try:

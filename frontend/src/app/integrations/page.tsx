@@ -84,6 +84,12 @@ function IntegrationWorkspace({
                         ? `Capabilities: ${item.capabilities.join(", ").replaceAll("_", " ")}`
                         : "Not available in this release"}
                     </p>
+                    {item.provider_state && (
+                      <p className="mt-2 text-sm">
+                        Provider configuration:{" "}
+                        <strong>{item.provider_state}</strong>
+                      </p>
+                    )}
                     {item.capabilities.length > 0 && (
                       <p className="crm-muted mt-2">
                         Application configuration and provider authorization are
@@ -93,7 +99,8 @@ function IntegrationWorkspace({
                           : "Live provider verification not recorded."}
                       </p>
                     )}
-                    {item.capabilities.includes("connect") &&
+                    {(item.capabilities.includes("connect") ||
+                      ["whatsapp", "apollo"].includes(item.provider)) &&
                     can("integrations:write") ? (
                       <button
                         className="crm-secondary mt-4"
@@ -171,10 +178,23 @@ function IntegrationWorkspace({
               const name = String(
                 new FormData(event.currentTarget).get("name"),
               ).trim();
+              const form = new FormData(event.currentTarget);
+              const config = Object.fromEntries(
+                [
+                  "phone_number_id",
+                  "page_id",
+                  "form_id",
+                  "customer_id",
+                ].flatMap((field) => {
+                  const value = String(form.get(field) || "").trim();
+                  return value ? [[field, value]] : [];
+                }),
+              );
               void action.run(async () => {
                 const result = await operations.createIntegration(
                   provider,
                   name,
+                  config,
                 );
                 setProvider("");
                 return result;
@@ -191,10 +211,28 @@ function IntegrationWorkspace({
                 placeholder="Team inbox"
               />
             </label>
+            {(
+              {
+                whatsapp: ["phone_number_id"],
+                meta: ["page_id", "form_id"],
+                instagram: ["page_id"],
+                google_ads: ["customer_id", "form_id"],
+              } as Record<string, string[]>
+            )[provider]?.map((field) => (
+              <label className="crm-field" key={field}>
+                {field.replaceAll("_", " ")}
+                <input
+                  name={field}
+                  className="crm-input"
+                  required
+                  maxLength={255}
+                />
+              </label>
+            ))}
             <p className="crm-muted">
-              The integration is created pending authorization. Use Authorize on
-              the connection to complete provider consent. Scheduled sync starts
-              disabled.
+              The integration is created pending authorization. OAuth providers
+              require consent; API providers require encrypted credentials and a
+              successful health check. Scheduled sync starts disabled.
             </p>
             {action.error && (
               <p role="alert" className="crm-error">
@@ -226,8 +264,8 @@ function IntegrationCard({
   const [job, setJob] = useState("");
   const [logs, setLogs] = useState(false);
   const [notice, setNotice] = useState("");
-  const [cursor, setCursor] = useState("");
-  const key = useRef<{ cursor: string; value: string } | null>(null);
+  const [configure, setConfigure] = useState(false);
+  const key = useRef<string | null>(null);
   const { confirm } = useConfirm();
   const current = status.data;
   async function authorize() {
@@ -240,9 +278,12 @@ function IntegrationCard({
           url.pathname === "/integrations/callback"
         ) &&
         (url.protocol !== "https:" ||
-          !["accounts.google.com", "login.microsoftonline.com"].includes(
-            url.hostname,
-          ))
+          ![
+            "accounts.google.com",
+            "login.microsoftonline.com",
+            "www.facebook.com",
+            "www.linkedin.com",
+          ].includes(url.hostname))
       )
         throw new Error("Unexpected provider authorization destination.");
       sessionStorage.setItem(
@@ -258,15 +299,10 @@ function IntegrationCard({
     });
   }
   async function sync() {
-    if (key.current?.cursor !== cursor)
-      key.current = { cursor, value: crypto.randomUUID() };
-    const requestKey = key.current.value;
+    key.current ??= crypto.randomUUID();
+    const requestKey = key.current;
     await action.run(async () => {
-      const result = await operations.sync(
-        integration.id,
-        requestKey,
-        cursor || undefined,
-      );
+      const result = await operations.sync(integration.id, requestKey);
       setJob(result.id);
       key.current = null;
       return result;
@@ -288,6 +324,11 @@ function IntegrationCard({
                 ? " · Credentials expired; refresh or reconnect"
                 : ""}
             </p>
+            {integration.provider_state && (
+              <p className="text-sm">
+                Provider state: <strong>{integration.provider_state}</strong>
+              </p>
+            )}
             <p className="crm-muted">
               Token expiry: {timestamp(current.expires_at)}
             </p>
@@ -326,6 +367,15 @@ function IntegrationCard({
             {current.status === "connected" ? "Reconnect" : "Authorize"}
           </button>
         )}
+        {writable &&
+          ["whatsapp", "apollo"].includes(integration.provider || "") && (
+            <button
+              className="crm-secondary"
+              onClick={() => setConfigure(true)}
+            >
+              Configure API credentials
+            </button>
+          )}
         {writable && current?.status === "connected" && (
           <>
             <button
@@ -377,15 +427,6 @@ function IntegrationCard({
         current?.status === "connected" &&
         current.capabilities.includes("sync") && (
           <div className="crm-form">
-            <label className="crm-field">
-              Next-page cursor (optional)
-              <input
-                className="crm-input"
-                value={cursor}
-                maxLength={1000}
-                onChange={(e) => setCursor(e.target.value)}
-              />
-            </label>
             <button
               className="crm-secondary"
               disabled={action.pending}
@@ -394,8 +435,8 @@ function IntegrationCard({
               Queue sync
             </button>
             <p className="crm-muted">
-              Sync processes a bounded page. A continuation cursor is shown in
-              the completed job result when more messages remain.
+              Sync resumes from the last successfully stored provider
+              checkpoint. The server owns pagination and continuation cursors.
             </p>
           </div>
         )}
@@ -416,7 +457,211 @@ function IntegrationCard({
         <JobStatus jobId={job} onComplete={() => void status.refetch()} />
       )}
       {logs && <SyncHistory id={integration.id} />}
+      {logs && <ProviderHistory id={integration.id} writable={writable} />}
+      <Dialog
+        open={configure}
+        title="Configure provider credentials"
+        onClose={() => setConfigure(false)}
+      >
+        {configure && (
+          <CredentialForm
+            integration={integration}
+            onSaved={() => {
+              setConfigure(false);
+              setNotice(
+                "Provider health check completed. Connection state was refreshed from the backend.",
+              );
+            }}
+          />
+        )}
+      </Dialog>
     </article>
+  );
+}
+function CredentialForm({
+  integration,
+  onSaved,
+}: {
+  integration: Integration;
+  onSaved: () => void;
+}) {
+  const action = useAction();
+  const credentialName = useRef<string | null>(null);
+  const [credentialId, setCredentialId] = useState("");
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await action.run(async () => {
+      let id = credentialId;
+      if (!id) {
+        const value = String(new FormData(form).get("credential") || "");
+        credentialName.current ??= `provider-access-${crypto.randomUUID()}`;
+        const credential = await operations.storeCredential(
+          integration.id,
+          {
+            [integration.provider === "apollo" ? "api_key" : "access_token"]:
+              value,
+          },
+          credentialName.current,
+        );
+        id = credential.id;
+        setCredentialId(id);
+        form.reset();
+      }
+      const result = await operations.configure(integration.id, id);
+      onSaved();
+      return result;
+    });
+  }
+  return (
+    <form className="crm-form" onSubmit={submit}>
+      {!credentialId && (
+        <label className="crm-field">
+          {integration.provider === "apollo" ? "API key" : "Access token"}
+          <input
+            name="credential"
+            className="crm-input"
+            type="password"
+            autoComplete="off"
+            required
+            maxLength={10000}
+          />
+        </label>
+      )}
+      <p className="crm-muted">
+        Credentials are encrypted on the server. The provider must pass a health
+        check before this connection becomes connected.
+      </p>
+      {credentialId && (
+        <p role="status">
+          Credentials stored. Retry the health check after correcting provider
+          configuration.
+        </p>
+      )}
+      {action.error && (
+        <p role="alert" className="crm-error">
+          {action.error}
+        </p>
+      )}
+      <button className="crm-button" disabled={action.pending}>
+        {action.pending
+          ? "Checking…"
+          : credentialId
+            ? "Retry health check"
+            : "Save and verify credentials"}
+      </button>
+    </form>
+  );
+}
+type ProviderSync = {
+  id: string;
+  sync_type: string;
+  status: string;
+  records_processed: number;
+  records_created: number;
+  records_updated: number;
+  records_failed: number;
+  error_code: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+type WebhookReceipt = {
+  id: string;
+  state: string;
+  attempts: number;
+  error_code: string | null;
+  created_at: string;
+  processed_at: string | null;
+};
+function ProviderHistory({ id, writable }: { id: string; writable: boolean }) {
+  const syncs = useResource<ProviderSync[]>(`/integrations/${id}/sync-jobs`);
+  const receipts = useResource<WebhookReceipt[]>(
+    `/integrations/${id}/webhook-receipts`,
+  );
+  const action = useAction();
+  return (
+    <div className="space-y-4 border-t border-[var(--border)] pt-4">
+      <section>
+        <h4 className="mb-3 font-semibold">Resumable sync jobs</h4>
+        <ResourceState
+          loading={syncs.isLoading}
+          error={syncs.error}
+          empty={syncs.data?.length === 0}
+          onRetry={syncs.refetch}
+        >
+          <ul className="space-y-3">
+            {syncs.data?.map((sync) => (
+              <li
+                key={sync.id}
+                className="rounded-xl bg-[var(--panel2)] p-3 text-sm"
+              >
+                <p>
+                  {sync.sync_type} · <strong>{sync.status}</strong>
+                </p>
+                <p>
+                  Processed {sync.records_processed} · Created{" "}
+                  {sync.records_created} · Updated {sync.records_updated} ·
+                  Failed {sync.records_failed}
+                </p>
+                <p className="crm-muted">
+                  {timestamp(sync.started_at)} — {timestamp(sync.finished_at)}
+                </p>
+                {sync.error_code && (
+                  <p className="crm-error">
+                    {sync.error_code.replaceAll("_", " ")}
+                  </p>
+                )}
+                {writable &&
+                  ["pending", "running", "partial"].includes(sync.status) && (
+                    <button
+                      className="crm-danger mt-2"
+                      disabled={action.pending}
+                      onClick={() =>
+                        void action.run(() => operations.cancelSync(sync.id))
+                      }
+                    >
+                      Cancel sync
+                    </button>
+                  )}
+              </li>
+            ))}
+          </ul>
+        </ResourceState>
+      </section>
+      <section>
+        <h4 className="mb-3 font-semibold">Inbound webhook receipts</h4>
+        <ResourceState
+          loading={receipts.isLoading}
+          error={receipts.error}
+          empty={receipts.data?.length === 0}
+          onRetry={receipts.refetch}
+        >
+          <ul className="space-y-2 text-sm">
+            {receipts.data?.map((receipt) => (
+              <li
+                key={receipt.id}
+                className="rounded-xl bg-[var(--panel2)] p-3"
+              >
+                <p>
+                  <strong>{receipt.state}</strong> · Attempt {receipt.attempts}
+                </p>
+                <p className="crm-muted">{timestamp(receipt.created_at)}</p>
+                {receipt.error_code && (
+                  <p className="crm-error">
+                    {receipt.error_code.replaceAll("_", " ")}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </ResourceState>
+      </section>
+      {action.error && (
+        <p role="alert" className="crm-error">
+          {action.error}
+        </p>
+      )}
+    </div>
   );
 }
 function SyncHistory({ id }: { id: string }) {

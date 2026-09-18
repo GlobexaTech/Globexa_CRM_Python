@@ -611,7 +611,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Verify Subscription
+         * @description Meta subscription challenge. Verify-token is distinct from the app signing secret.
+         */
+        get: operations["verify_subscription_api_v1_hooks__endpoint_id__get"];
         put?: never;
         /** Receive Webhook */
         post: operations["receive_webhook_api_v1_hooks__endpoint_id__post"];
@@ -902,7 +906,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Logout - client should discard tokens.
+         * @description Revoke this signed session family, including its remaining refresh tokens.
          */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
@@ -2512,6 +2516,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integrations/{integration_id}/configure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Configure Provider */
+        post: operations["configure_provider_api_v1_integrations__integration_id__configure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{integration_id}/sync-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Provider Sync Jobs */
+        get: operations["list_provider_sync_jobs_api_v1_integrations__integration_id__sync_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/sync-jobs/{sync_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Provider Sync */
+        post: operations["cancel_provider_sync_api_v1_integrations_sync_jobs__sync_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{integration_id}/webhook-receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Provider Receipts */
+        get: operations["list_provider_receipts_api_v1_integrations__integration_id__webhook_receipts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{integration_id}/enrich": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enrich Contact */
+        post: operations["enrich_contact_api_v1_integrations__integration_id__enrich_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{integration_id}/sync-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Provider Sync */
+        post: operations["reset_provider_sync_api_v1_integrations__integration_id__sync_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/leads/{lead_id}/score": {
         parameters: {
             query?: never;
@@ -2752,6 +2858,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workforce/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agents */
+        get: operations["agents_api_v1_workforce_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Executions */
+        get: operations["executions_api_v1_workforce_executions_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_workforce_executions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/executions/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_workforce_executions__execution_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/executions/{execution_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_v1_workforce_executions__execution_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/executions/{execution_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry */
+        post: operations["retry_api_v1_workforce_executions__execution_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Approvals */
+        get: operations["approvals_api_v1_workforce_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/approvals/{approval_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decision */
+        post: operations["decision_api_v1_workforce_approvals__approval_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Memories */
+        get: operations["memories_api_v1_workforce_memory_get"];
+        put?: never;
+        /** Remember */
+        post: operations["remember_api_v1_workforce_memory_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workforce/memory/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Forget */
+        delete: operations["forget_api_v1_workforce_memory__memory_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -2816,6 +3077,61 @@ export interface components {
             } | null;
             /** Correlation Id */
             correlation_id?: string | null;
+        };
+        /** ApprovalDecision */
+        ApprovalDecision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected";
+            /** Action Hash */
+            action_hash: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** ApprovalResponse */
+        ApprovalResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Requesting User Id */
+            requesting_user_id: string | null;
+            /** Execution Id */
+            execution_id: string | null;
+            /** Action Type */
+            action_type: string;
+            /** Target */
+            target: string | null;
+            /** Proposed Action */
+            proposed_action: {
+                [key: string]: unknown;
+            };
+            /** Action Hash */
+            action_hash: string;
+            /** Status */
+            status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decided By */
+            decided_by: string | null;
+            /** Rejection Reason */
+            rejection_reason: string | null;
+            /** Execution Result */
+            execution_result: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AssignLeadRequest */
         AssignLeadRequest: {
@@ -3155,6 +3471,14 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ConfigureProviderInput */
+        ConfigureProviderInput: {
+            /**
+             * Credential Id
+             * Format: uuid
+             */
+            credential_id: string;
         };
         /** ContactCreate */
         ContactCreate: {
@@ -3590,6 +3914,136 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** EnrichmentInput */
+        EnrichmentInput: {
+            /** Contact Id */
+            contact_id?: string | null;
+            /** Lead Id */
+            lead_id?: string | null;
+        };
+        /** ExecutionContext */
+        ExecutionContext: {
+            /** Entity Type */
+            entity_type?: ("lead" | "contact" | "deal" | "conversation" | "campaign") | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /**
+             * Untrusted Text
+             * @default
+             */
+            untrusted_text: string;
+            /** Research Urls */
+            research_urls?: string[];
+        };
+        /** ExecutionDetail */
+        ExecutionDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Task Type */
+            task_type: string;
+            /** State */
+            state: string;
+            /** Task */
+            task: {
+                [key: string]: unknown;
+            };
+            /** Tools Used */
+            tools_used: unknown[];
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Attempts */
+            attempts: number;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Failed At */
+            failed_at?: string | null;
+            /** Children */
+            children?: components["schemas"]["ExecutionResponse"][];
+        };
+        /** ExecutionInput */
+        ExecutionInput: {
+            /**
+             * Agent Name
+             * @enum {string}
+             */
+            agent_name: "research" | "lead_mining" | "sales" | "analyst" | "support" | "supervisor";
+            /** Objective */
+            objective: string;
+            context?: components["schemas"]["ExecutionContext"];
+            /** Tools */
+            tools?: string[];
+        };
+        /** ExecutionResponse */
+        ExecutionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Task Type */
+            task_type: string;
+            /** State */
+            state: string;
+            /** Task */
+            task: {
+                [key: string]: unknown;
+            };
+            /** Tools Used */
+            tools_used: unknown[];
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Attempts */
+            attempts: number;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Failed At */
+            failed_at?: string | null;
         };
         /** FeatureEntitlementResponse */
         FeatureEntitlementResponse: {
@@ -4102,14 +4556,30 @@ export interface components {
             /** Is Default */
             is_default?: boolean | null;
         };
+        /** MemoryInput */
+        MemoryInput: {
+            /**
+             * Agent Name
+             * @enum {string}
+             */
+            agent_name: "research" | "lead_mining" | "sales" | "analyst" | "support" | "supervisor";
+            /** Key */
+            key: string;
+            /** Value */
+            value: {
+                [key: string]: unknown;
+            };
+            /**
+             * Retention Days
+             * @default 30
+             */
+            retention_days: number;
+        };
         /** MessageInput */
         MessageInput: {
             /** Body */
             body: string;
-            /**
-             * Recipient
-             * Format: email
-             */
+            /** Recipient */
             recipient: string;
             /** Attachments */
             attachments?: components["schemas"]["Attachment"][];
@@ -5114,7 +5584,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 kind: "contacts" | "companies" | "leads";
@@ -5153,7 +5623,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 kind: "contacts" | "companies" | "leads";
@@ -5189,7 +5659,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 kind: "contacts" | "companies" | "leads";
@@ -5232,7 +5702,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5263,7 +5733,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5298,7 +5768,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 conversation_id: string;
@@ -5337,7 +5807,7 @@ export interface operations {
                 direction?: ("inbound" | "outbound") | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 conversation_id: string;
@@ -5371,7 +5841,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 conversation_id: string;
@@ -5408,7 +5878,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 conversation_id: string;
@@ -5443,7 +5913,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -5482,7 +5952,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -5521,7 +5991,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -5557,7 +6027,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -5596,7 +6066,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5627,7 +6097,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5664,7 +6134,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 workflow_id: string;
@@ -5699,7 +6169,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 workflow_id: string;
@@ -5738,7 +6208,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 workflow_id: string;
@@ -5780,7 +6250,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 workflow_id: string;
@@ -5813,7 +6283,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -5846,7 +6316,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -5881,7 +6351,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -5920,7 +6390,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -5955,7 +6425,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -5990,7 +6460,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -6028,7 +6498,7 @@ export interface operations {
             };
             header: {
                 "Idempotency-Key": string;
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -6062,7 +6532,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6098,7 +6568,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6133,7 +6603,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 proposal_id: string;
@@ -6168,7 +6638,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 job_id: string;
@@ -6206,7 +6676,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6237,7 +6707,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 job_id: string;
@@ -6270,7 +6740,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 job_id: string;
@@ -6303,7 +6773,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 event_id: string;
@@ -6341,7 +6811,7 @@ export interface operations {
                 end?: string | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 view: "dashboard" | "pipeline" | "conversion" | "campaigns" | "activity" | "ai";
@@ -6381,7 +6851,7 @@ export interface operations {
                 offset?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6412,7 +6882,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6450,7 +6920,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": string;
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 name: "search_leads" | "get_customer" | "get_pipeline" | "create_task" | "update_lead" | "create_note" | "draft_email";
@@ -6549,6 +7019,37 @@ export interface operations {
             };
         };
     };
+    verify_subscription_api_v1_hooks__endpoint_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     receive_webhook_api_v1_hooks__endpoint_id__post: {
         parameters: {
             query?: never;
@@ -6584,7 +7085,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6615,7 +7116,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6653,7 +7154,7 @@ export interface operations {
                 q: string;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6684,7 +7185,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6715,7 +7216,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6746,7 +7247,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -6841,7 +7342,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7006,7 +7507,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7037,7 +7538,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7072,7 +7573,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7103,7 +7604,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7136,7 +7637,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7172,7 +7673,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7203,7 +7704,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7258,7 +7759,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7291,7 +7792,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7322,7 +7823,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7359,7 +7860,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7392,7 +7893,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7425,7 +7926,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 tenant_id: string;
@@ -7462,7 +7963,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7493,7 +7994,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7528,7 +8029,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7559,7 +8060,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7592,7 +8093,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7623,7 +8124,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7660,7 +8161,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7697,7 +8198,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7728,7 +8229,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 user_id: string;
@@ -7772,7 +8273,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7803,7 +8304,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7838,7 +8339,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 contact_id: string;
@@ -7871,7 +8372,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 contact_id: string;
@@ -7902,7 +8403,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 contact_id: string;
@@ -7945,7 +8446,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -7976,7 +8477,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8011,7 +8512,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 company_id: string;
@@ -8044,7 +8545,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 company_id: string;
@@ -8075,7 +8576,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 company_id: string;
@@ -8120,7 +8621,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8151,7 +8652,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8186,7 +8687,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8219,7 +8720,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8250,7 +8751,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8289,7 +8790,7 @@ export interface operations {
                 owner_id: string;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8324,7 +8825,7 @@ export interface operations {
                 qualification_notes?: string | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8362,7 +8863,7 @@ export interface operations {
                 value?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -8395,7 +8896,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8435,7 +8936,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8466,7 +8967,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8501,7 +9002,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8540,7 +9041,7 @@ export interface operations {
                 source?: string | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8571,7 +9072,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8608,7 +9109,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8639,7 +9140,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8674,7 +9175,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8707,7 +9208,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8738,7 +9239,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8775,7 +9276,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8808,7 +9309,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 pipeline_id: string;
@@ -8845,7 +9346,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 stage_id: string;
@@ -8876,7 +9377,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 stage_id: string;
@@ -8920,7 +9421,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8951,7 +9452,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -8986,7 +9487,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -9019,7 +9520,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -9050,7 +9551,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -9089,7 +9590,7 @@ export interface operations {
                 stage_id: string;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -9130,7 +9631,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9161,7 +9662,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9196,7 +9697,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 task_id: string;
@@ -9229,7 +9730,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 task_id: string;
@@ -9260,7 +9761,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 task_id: string;
@@ -9304,7 +9805,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9335,7 +9836,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9370,7 +9871,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 note_id: string;
@@ -9403,7 +9904,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 note_id: string;
@@ -9434,7 +9935,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 note_id: string;
@@ -9480,7 +9981,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9517,7 +10018,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9548,7 +10049,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -9585,7 +10086,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9620,7 +10121,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9651,7 +10152,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9692,7 +10193,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9729,7 +10230,7 @@ export interface operations {
                 scheduled_at: string;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9764,7 +10265,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9799,7 +10300,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9834,7 +10335,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9869,7 +10370,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9904,7 +10405,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9945,7 +10446,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -9980,7 +10481,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10015,7 +10516,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10056,7 +10557,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 template_id: string;
@@ -10097,7 +10598,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10132,7 +10633,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10173,7 +10674,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 sequence_id: string;
@@ -10204,7 +10705,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 sequence_id: string;
@@ -10245,7 +10746,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10280,7 +10781,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10321,7 +10822,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 trigger_id: string;
@@ -10352,7 +10853,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 trigger_id: string;
@@ -10397,7 +10898,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10430,7 +10931,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 campaign_id: string;
@@ -10470,7 +10971,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10501,7 +11002,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -10540,7 +11041,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10575,7 +11076,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10606,7 +11107,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10647,7 +11148,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10682,7 +11183,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10723,7 +11224,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 credential_id: string;
@@ -10754,7 +11255,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 credential_id: string;
@@ -10795,7 +11296,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10832,7 +11333,7 @@ export interface operations {
                 full_sync?: boolean;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10870,7 +11371,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10903,7 +11404,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10938,7 +11439,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 integration_id: string;
@@ -10979,7 +11480,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 webhook_id: string;
@@ -11010,7 +11511,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 webhook_id: string;
@@ -11051,7 +11552,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11084,7 +11585,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11123,7 +11624,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 source_id: string;
@@ -11154,7 +11655,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 source_id: string;
@@ -11203,7 +11704,7 @@ export interface operations {
                 page_size?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11234,7 +11735,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11267,7 +11768,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11308,7 +11809,7 @@ export interface operations {
                 rule_id?: string | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -11345,10 +11846,232 @@ export interface operations {
                 rule_id?: string | null;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    configure_provider_api_v1_integrations__integration_id__configure_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureProviderInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_provider_sync_jobs_api_v1_integrations__integration_id__sync_jobs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_provider_sync_api_v1_integrations_sync_jobs__sync_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                sync_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_provider_receipts_api_v1_integrations__integration_id__webhook_receipts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enrich_contact_api_v1_integrations__integration_id__enrich_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                integration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrichmentInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_provider_sync_api_v1_integrations__integration_id__sync_reset_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                integration_id: string;
             };
             cookie?: never;
         };
@@ -11380,7 +12103,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -11419,7 +12142,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -11458,7 +12181,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -11497,7 +12220,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -11536,7 +12259,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 lead_id: string;
@@ -11575,7 +12298,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11612,7 +12335,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 deal_id: string;
@@ -11651,7 +12374,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path: {
                 proposal_id: string;
@@ -11690,7 +12413,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11727,7 +12450,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11764,7 +12487,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11803,7 +12526,7 @@ export interface operations {
                 days?: number;
             };
             header?: {
-                authorization?: string;
+                authorization?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -11820,6 +12543,385 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agents_api_v1_workforce_agents_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    executions_api_v1_workforce_executions_get: {
+        parameters: {
+            query?: {
+                agent_name?: string | null;
+                entity_type?: string | null;
+                entity_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_v1_workforce_executions_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization?: string | null;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_workforce_executions__execution_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_v1_workforce_executions__execution_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_api_v1_workforce_executions__execution_id__retry_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization?: string | null;
+                "Idempotency-Key": string;
+            };
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approvals_api_v1_workforce_approvals_get: {
+        parameters: {
+            query?: {
+                status?: ("pending" | "approved" | "rejected" | "expired" | "executed" | "failed") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decision_api_v1_workforce_approvals__approval_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memories_api_v1_workforce_memory_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remember_api_v1_workforce_memory_post: {
+        parameters: {
+            query?: never;
+            header: {
+                authorization?: string | null;
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_api_v1_workforce_memory__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

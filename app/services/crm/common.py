@@ -28,6 +28,7 @@ async def authorize(db, tenant_id, actor_id, permission):
             Membership.user_id == actor_id,
             User.is_active.is_(True),
         )
+        .execution_options(populate_existing=True)
     )
     if member is None or permission not in get_role_permissions(member.role):
         raise HTTPException(403, "Permission required: " + permission)

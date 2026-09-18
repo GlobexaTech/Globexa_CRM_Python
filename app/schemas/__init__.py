@@ -297,9 +297,10 @@ class AIUsageLogBase(BaseSchema):
     task_type: str
     provider: str
     model: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    execution_id: Optional[UUID] = None
     estimated_cost_usd: Optional[float] = None
     latency_ms: int = 0
     success: bool = True
@@ -312,9 +313,10 @@ class AIUsageLogCreate(BaseModel):
     task_type: str
     provider: str
     model: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    execution_id: Optional[UUID] = None
     estimated_cost_usd: Optional[float] = None
     latency_ms: int = 0
     success: bool = True

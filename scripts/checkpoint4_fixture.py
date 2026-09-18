@@ -52,8 +52,8 @@ def require_test_database():
     if os.environ.get("APP_ENVIRONMENT") != "testing":
         raise RuntimeError("E2E fixtures require APP_ENVIRONMENT=testing")
     name = os.environ.get("DATABASE_NAME", "")
-    if not name.startswith("globexa_cp4") or not name.replace("_", "").isalnum():
-        raise RuntimeError("E2E fixtures require a dedicated globexa_cp4 database")
+    if not name.startswith(("globexa_cp4", "globexa_cp56")) or not name.replace("_", "").isalnum():
+        raise RuntimeError("E2E fixtures require a dedicated globexa_cp4 or globexa_cp56 database")
 
 
 async def seed():
@@ -181,6 +181,7 @@ def main():
         "DATABASE_PORT": str(settings.database.port), "DATABASE_NAME": settings.database.name,
         "DATABASE_USERNAME": os.environ["RUNTIME_DATABASE_ROLE"], "DATABASE_PASSWORD": os.environ["RUNTIME_DATABASE_PASSWORD"],
         "REDIS_HOST": os.environ.get("REDIS_HOST", "127.0.0.1"), "REDIS_PORT": os.environ.get("REDIS_PORT", "6379"),
+        "REDIS_PASSWORD": os.environ.get("REDIS_PASSWORD", ""),
         "REDIS_DB": "10", "CELERY_BROKER_URL": os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/11"),
         "CELERY_RESULT_BACKEND": os.environ.get("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/12"),
         "SECURITY_SECRET_KEY": os.environ["SECURITY_SECRET_KEY"], "SECURITY_CREDENTIAL_ENCRYPTION_KEY": os.environ["SECURITY_CREDENTIAL_ENCRYPTION_KEY"],

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 EVENT_TYPES = frozenset({"lead.created", "lead.updated", "contact.created", "contact.updated", "deal.created",
     "deal.stage_changed", "task.created", "task.completed", "task.overdue", "note.created", "activity.created",
     "campaign.started", "campaign.completed", "message.received", "message.sent", "integration.synced",
-    "ai.completed", "automation.completed", "conversation.created"})
+    "ai.completed", "automation.completed", "conversation.created", "webhook.received"})
 event_depth = ContextVar("crm_event_depth", default=0)
 
 
