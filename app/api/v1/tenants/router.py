@@ -4,9 +4,10 @@ Tenant management, subscription, feature entitlements.
 """
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -38,8 +39,8 @@ async def create_tenant(
 ):
     """Create a new tenant (admin only)."""
     # Check slug uniqueness
-    result = await db.execute(select(Tenant).where(Tenant.slug == data.slug))
-    if result.scalar_one_or_none():
+    from app.services.auth.service import AuthService
+    if await db.scalar(text("SELECT public.tenant_slug_exists(:slug)"), {"slug": data.slug}):
         raise HTTPException(status_code=400, detail="Slug already taken")
 
     # Check domain uniqueness if provided
@@ -56,11 +57,15 @@ async def create_tenant(
     db.add(tenant)
     await db.flush()
 
+    db.add(Membership(tenant_id=tenant.id, user_id=current_user[0].id,
+                      role=RoleEnum.OWNER, is_default=False))
+
     # Create default subscription
     subscription = Subscription(
         tenant_id=tenant.id,
         package=PackageEnum.STARTER,
         status=SubscriptionStatusEnum.TRIALING,
+        trial_end=datetime.now(timezone.utc) + timedelta(days=14),
     )
     db.add(subscription)
 
@@ -184,14 +189,16 @@ async def delete_tenant(
     current_user: tuple = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete tenant (admin only)."""
+    """Reject hard deletion while workspace audit retention is required."""
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    await db.delete(tenant)
-    await db.commit()
+    raise HTTPException(
+        status_code=409,
+        detail="Workspace deletion requires a retention-aware administrative process",
+    )
 
 
 # Subscription endpoints

@@ -33,6 +33,10 @@ async def check_rate(key, limit=120, seconds=60):
 
 
 async def enforce_rate(request: Request):
+    if request.url.path in {"/api/v1/auth/google/start", "/api/v1/auth/google/callback"}:
+        address = request.client.host if request.client else "unknown"
+        await check_rate("google-login:" + address, 100)
+        return
     if request.method not in {
         "POST",
         "PATCH",

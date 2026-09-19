@@ -1,6 +1,7 @@
 """Explainable recommendations and measurements from actual tenant CRM records."""
 
 from sqlalchemy import select, func
+from app.core.record_access import record_scope
 from fastapi import HTTPException
 from app.models import (
     Lead,
@@ -33,7 +34,7 @@ async def inspect_entity(db, tenant_id, actor_id, kind, entity_type, entity_id):
         )
     if kind == "lead" or (kind == "next_best_action" and entity_type == "lead"):
         await authorize(db, tenant_id, actor_id, "leads:read")
-        row = await owned(db, Lead, tenant_id, entity_id)
+        row = await owned(db, Lead, tenant_id, entity_id, actor_id=actor_id)
         await authorize(db, tenant_id, actor_id, "tasks:read")
         activity = await db.scalar(
             select(func.count())
@@ -43,7 +44,7 @@ async def inspect_entity(db, tenant_id, actor_id, kind, entity_type, entity_id):
         tasks = await db.scalar(
             select(func.count())
             .select_from(Task)
-            .where(Task.tenant_id == tenant_id, Task.lead_id == row.id, Task.completed_at.is_(None))
+            .where(await record_scope(db, Task, tenant_id, actor_id), Task.tenant_id == tenant_id, Task.lead_id == row.id, Task.completed_at.is_(None))
         )
         score, reasons = 0, []
         for matched, points, reason in (
@@ -71,6 +72,7 @@ async def inspect_entity(db, tenant_id, actor_id, kind, entity_type, entity_id):
                             Lead.tenant_id == tenant_id,
                             Lead.contact_id == row.contact_id,
                             Lead.id != row.id,
+                            await record_scope(db, Lead, tenant_id, actor_id),
                         )
                         .limit(20)
                     )
@@ -106,7 +108,7 @@ async def inspect_entity(db, tenant_id, actor_id, kind, entity_type, entity_id):
     if kind == "deal" or (kind == "next_best_action" and entity_type == "deal"):
         await authorize(db, tenant_id, actor_id, "deals:read")
         await authorize(db, tenant_id, actor_id, "tasks:read")
-        row = await owned(db, Deal, tenant_id, entity_id)
+        row = await owned(db, Deal, tenant_id, entity_id, actor_id=actor_id)
         entered = await db.scalar(
             select(func.max(DomainEvent.created_at)).where(
                 DomainEvent.tenant_id == tenant_id,
@@ -122,6 +124,7 @@ async def inspect_entity(db, tenant_id, actor_id, kind, entity_type, entity_id):
             .where(
                 Task.tenant_id == tenant_id,
                 Task.deal_id == row.id,
+                await record_scope(db, Task, tenant_id, actor_id),
                 Task.completed_at.is_(None),
                 Task.due_date < now(),
             )

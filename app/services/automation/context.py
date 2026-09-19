@@ -23,7 +23,7 @@ async def snapshot(db, tenant_id, actor_id, entity):
     if entity and entity.get("entity_type"):
         kind, identifier = entity["entity_type"], UUID(str(entity["entity_id"]))
         await authorize(db, tenant_id, actor_id, PERMISSIONS[kind])
-        row = await owned(db, MODELS[kind], tenant_id, identifier)
+        row = await owned(db, MODELS[kind], tenant_id, identifier, actor_id=actor_id)
         await db.refresh(row)
         result[kind] = jsonable_encoder(
             {field: getattr(row, field) for field in FIELDS[kind] if hasattr(row, field)}

@@ -190,7 +190,7 @@ async def perform_action(db, tenant_id, actor_id, tool, arguments, key):
         return {"id": str(row.id)}
     if tool in {"update_lead", "update_deal", "assign_owner"}:
         model = Deal if tool == "update_deal" else Lead
-        row = await owned(db, model, tenant_id, UUID(arguments["entity_id"]), True)
+        row = await owned(db, model, tenant_id, UUID(arguments["entity_id"]), True, actor_id=actor_id)
         values = {k: v for k, v in arguments.items() if k != "entity_id"}
         if tool == "assign_owner":
             values["owner_id"] = UUID(values["owner_id"])
@@ -207,6 +207,12 @@ async def perform_action(db, tenant_id, actor_id, tool, arguments, key):
                 raise HTTPException(422, "Stage is outside the deal pipeline")
         for field, value in values.items():
             setattr(row, field, value)
+        if model is Deal:
+            from app.services.crm.deal_state import apply_stage
+            if values.get("stage_id"):
+                apply_stage(row, stage)
+            elif "value" in values:
+                row.weighted_value = int(row.value * row.probability / 100)
         await db.flush()
         return {"id": str(row.id)}
     if tool == "send_email":

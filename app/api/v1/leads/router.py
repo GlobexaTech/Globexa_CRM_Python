@@ -1,5 +1,7 @@
+from app.api.deps import require_permission
 from datetime import datetime, timezone
-from app.models import Deal
+from app.models import Deal, LeadSourceEnum
+from app.services.crm.common import authorize
 """
 Leads API routes for Globexa CRM.
 """
@@ -50,6 +52,9 @@ async def create_lead(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Company not found")
     
+    if data.owner_id and data.owner_id != user.id:
+        await authorize(db, tenant_id, user.id, "leads:assign")
+
     # Verify owner exists if provided
     if data.owner_id:
         from app.models import Membership
@@ -75,9 +80,9 @@ async def create_lead(
 async def list_leads(
     params: PaginationParams = Depends(),
     search: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    status: Optional[LeadStatusEnum] = Query(None),
     owner_id: Optional[UUID] = Query(None),
-    source: Optional[str] = Query(None),
+    source: Optional[LeadSourceEnum] = Query(None),
     is_qualified: Optional[bool] = Query(None),
     current_user: tuple = Depends(require_leads_read),
     db: AsyncSession = Depends(get_db),
@@ -195,6 +200,8 @@ async def update_lead(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Company not found")
     
+    if "owner_id" in update_data and update_data["owner_id"] != lead.owner_id:
+        await authorize(db, tenant_id, user.id, "leads:assign")
     if "owner_id" in update_data and update_data["owner_id"]:
         from app.models import Membership
         result = await db.execute(
@@ -219,7 +226,7 @@ async def update_lead(
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lead(
     lead_id: UUID,
-    current_user: tuple = Depends(require_leads_write),
+    current_user: tuple = Depends(require_permission("leads:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):

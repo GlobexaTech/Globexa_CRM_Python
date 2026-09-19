@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Protocol
 from uuid import UUID
 from sqlalchemy import func, literal_column, select
 from app.core.search import PostgresSearch
+from app.core.record_access import record_scope
 
 
 class SearchBackend(Protocol):
@@ -57,7 +58,7 @@ class PostgresFTSBackend:
         rank = func.ts_rank(vector, term)
         statement = select(
             model.id, rank.label("rank"), literal_column(expression).label("content")
-        ).where(model.tenant_id == tenant_id, vector.op("@@")(term))
+        ).where(model.tenant_id == tenant_id, await record_scope(self.db, model, tenant_id), vector.op("@@")(term))
         for key, value in (filters or {}).items():
             if key not in model.__table__.columns or key in {"tenant_id", "id"}:
                 raise ValueError("Unsupported search filter")

@@ -1,3 +1,4 @@
+from app.api.deps import require_permission
 """
 Contacts API routes for Globexa CRM.
 """
@@ -163,7 +164,7 @@ async def update_contact(
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_contact(
     contact_id: UUID,
-    current_user: tuple = Depends(require_contacts_write),
+    current_user: tuple = Depends(require_permission("contacts:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):

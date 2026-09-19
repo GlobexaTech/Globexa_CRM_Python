@@ -378,29 +378,31 @@ function CampaignDetail({
                   >
                     Configure audience and messages
                   </button>
-                  <button
-                    className="crm-danger"
-                    disabled={action.pending}
-                    onClick={() =>
-                      void (async () => {
-                        if (
-                          await confirm({
-                            title: "Delete draft campaign?",
-                            message:
-                              "This permanently removes the draft and its configuration.",
-                            confirmText: "Delete draft",
-                            tone: "danger",
-                          })
-                        )
-                          await action.run(async () => {
-                            await operations.deleteCampaign(id);
-                            onDeleted();
-                          });
-                      })()
-                    }
-                  >
-                    Delete draft
-                  </button>
+                  {can("campaigns:delete") && (
+                    <button
+                      className="crm-danger"
+                      disabled={action.pending}
+                      onClick={() =>
+                        void (async () => {
+                          if (
+                            await confirm({
+                              title: "Delete draft campaign?",
+                              message:
+                                "This permanently removes the draft and its configuration.",
+                              confirmText: "Delete draft",
+                              tone: "danger",
+                            })
+                          )
+                            await action.run(async () => {
+                              await operations.deleteCampaign(id);
+                              onDeleted();
+                            });
+                        })()
+                      }
+                    >
+                      Delete draft
+                    </button>
+                  )}
                 </>
               )}
               {can("campaigns:send") && (

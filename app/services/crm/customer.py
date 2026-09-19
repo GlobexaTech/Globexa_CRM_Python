@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.core.rbac import get_role_permissions
 from app.services.crm.common import owned, authorize
+from app.core.record_access import record_scope
 
 MODELS = {"contacts": Contact, "companies": Company, "leads": Lead}
 PERMISSIONS = {
@@ -75,7 +76,7 @@ async def customer360(db, tenant_id, actor_id, kind, entity_id, limit=50, offset
         raise HTTPException(422, "Customer type must be contacts, companies or leads")
     member = await authorize(db, tenant_id, actor_id, PERMISSIONS[kind])
     allowed = get_role_permissions(member.role)
-    root = await owned(db, MODELS[kind], tenant_id, entity_id)
+    root = await owned(db, MODELS[kind], tenant_id, entity_id, actor_id=actor_id)
     company_id = root.id if kind == "companies" else root.company_id
     contact_ids = (
         [root.id]
@@ -97,6 +98,7 @@ async def customer360(db, tenant_id, actor_id, kind, entity_id, limit=50, offset
             await db.scalars(
                 select(Lead.id).where(
                     Lead.tenant_id == tenant_id,
+                    await record_scope(db, Lead, tenant_id, actor_id),
                     or_(
                         Lead.id == root.id if kind == "leads" else False,
                         Lead.contact_id.in_(contact_ids),
@@ -111,6 +113,7 @@ async def customer360(db, tenant_id, actor_id, kind, entity_id, limit=50, offset
             await db.scalars(
                 select(Deal.id).where(
                     Deal.tenant_id == tenant_id,
+                    await record_scope(db, Deal, tenant_id, actor_id),
                     or_(
                         Deal.contact_id.in_(contact_ids),
                         Deal.lead_id.in_(lead_ids),
@@ -151,7 +154,8 @@ async def customer360(db, tenant_id, actor_id, kind, entity_id, limit=50, offset
         rows = (
             await db.scalars(
                 select(model)
-                .where(model.tenant_id == tenant_id, clause)
+                .where(model.tenant_id == tenant_id, clause,
+                       await record_scope(db, model, tenant_id, actor_id))
                 .order_by(model.created_at.desc())
                 .limit(200)
             )

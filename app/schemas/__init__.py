@@ -4,15 +4,26 @@ Request/Response models for authentication, tenants, users.
 """
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, ClassVar
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, AliasChoices
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, AliasChoices, field_validator
 from app.models import LeadStatusEnum, LeadSourceEnum, TaskStatusEnum, TaskPriorityEnum
 
 
 # =============================================================================
 # Base schemas
 # =============================================================================
+
+class EntityPatch(BaseModel):
+    non_nullable: ClassVar[set[str]] = set()
+
+    @field_validator("*")
+    @classmethod
+    def reject_explicit_null(cls, value, info):
+        if value is None and info.field_name in cls.non_nullable:
+            raise ValueError("Field cannot be null")
+        return value
+
 
 class BaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
@@ -53,7 +64,9 @@ class RefreshTokenRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    code: str
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=4096)
+    state: str = Field(min_length=20, max_length=128)
 
 
 class TokenPayload(BaseModel):
@@ -521,7 +534,7 @@ class LeadBase(BaseSchema):
     owner_id: Optional[UUID] = None
     source: Optional[LeadSourceEnum] = None
     source_id: Optional[str] = Field(None, max_length=255)
-    utm_source: Optional[LeadSourceEnum] = Field(None, max_length=100)
+    utm_source: Optional[str] = Field(None, max_length=100)
     utm_medium: Optional[str] = Field(None, max_length=100)
     utm_campaign: Optional[str] = Field(None, max_length=100)
     utm_content: Optional[str] = Field(None, max_length=100)
@@ -535,7 +548,8 @@ class LeadCreate(LeadBase):
     pass
 
 
-class LeadUpdate(BaseModel):
+class LeadUpdate(EntityPatch):
+    non_nullable = {'custom_fields', 'is_qualified', 'status', 'title'}
     contact_id: Optional[UUID] = None
     company_id: Optional[UUID] = None
     title: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -544,7 +558,7 @@ class LeadUpdate(BaseModel):
     owner_id: Optional[UUID] = None
     source: Optional[LeadSourceEnum] = None
     source_id: Optional[str] = Field(None, max_length=255)
-    utm_source: Optional[LeadSourceEnum] = Field(None, max_length=100)
+    utm_source: Optional[str] = Field(None, max_length=100)
     utm_medium: Optional[str] = Field(None, max_length=100)
     utm_campaign: Optional[str] = Field(None, max_length=100)
     utm_content: Optional[str] = Field(None, max_length=100)
@@ -653,7 +667,8 @@ class DealCreate(DealBase):
     pass
 
 
-class DealUpdate(BaseModel):
+class DealUpdate(EntityPatch):
+    non_nullable = {'currency', 'custom_fields', 'pipeline_id', 'probability', 'stage_id', 'title', 'value'}
     pipeline_id: Optional[UUID] = None
     stage_id: Optional[UUID] = None
     contact_id: Optional[UUID] = None
@@ -704,7 +719,8 @@ class TaskCreate(TaskBase):
     pass
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(EntityPatch):
+    non_nullable = {'custom_fields', 'is_recurring', 'priority', 'status', 'title'}
     lead_id: Optional[UUID] = None
     deal_id: Optional[UUID] = None
     contact_id: Optional[UUID] = None
@@ -908,7 +924,7 @@ class PendingLeadReview(BaseModel):
 
 class BulkLeadApprovalRequest(BaseModel):
     """Bulk approve/reject multiple leads."""
-    lead_ids: List[UUID]
+    lead_ids: List[UUID] = Field(min_length=1, max_length=200)
     action: str = Field(..., description="Action: approve, reject")
     reviewer_notes: Optional[str] = None
 

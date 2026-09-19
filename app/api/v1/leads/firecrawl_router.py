@@ -35,6 +35,18 @@ from app.services.integration.adapter import LeadData
 router = APIRouter(prefix="/leads/firecrawl", tags=["Leads - Firecrawl"])
 
 
+async def firecrawl_credentials(db, tenant_id, integration_id):
+    import json
+    from app.models import IntegrationCredential
+    row = await db.scalar(select(IntegrationCredential).where(
+        IntegrationCredential.tenant_id == tenant_id, IntegrationCredential.integration_id == integration_id,
+        IntegrationCredential.is_active.is_(True),
+    ).order_by(IntegrationCredential.created_at.desc()).limit(1))
+    if not row or (row.token_expires_at and row.token_expires_at <= datetime.now(timezone.utc)):
+        raise HTTPException(409, "Active Firecrawl credentials are required")
+    return json.loads(row.credentials_encrypted)
+
+
 @router.post("/search", response_model=FirecrawlSearchResponse)
 async def search_leads_firecrawl(
     request: FirecrawlSearchRequest,
@@ -64,8 +76,8 @@ async def search_leads_firecrawl(
             detail="Firecrawl integration not found or not connected. Please configure it first."
         )
     
-    # Get credentials
-    credentials = integration.config.get("credentials", {})
+    # Resolve only the tenant integration's active encrypted credential.
+    credentials = await firecrawl_credentials(db, tenant_id, integration.id)
     if not credentials.get("api_key"):
         raise HTTPException(
             status_code=400,
@@ -93,7 +105,7 @@ async def search_leads_firecrawl(
             query=request.query,
             results_count=0,
             leads=[],
-            error_message=result.error_message,
+            error_message="Firecrawl search failed",
         )
     
     # Store as pending leads for approval workflow
@@ -164,7 +176,7 @@ async def search_leads_firecrawl(
 async def get_pending_lead_reviews(
     params: PaginationParams = Depends(),
     source: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    status: Optional[PendingLeadStatusEnum] = Query(None),
     current_user: tuple = Depends(require_leads_read),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
@@ -223,167 +235,11 @@ async def approve_reject_lead(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """
-    Approve or reject a lead from external source (Firecrawl, etc.).
-    If approved, creates Contact/Lead in CRM and updates PendingLead.
-    """
-    user, membership = current_user
-    
-    if request.action not in ["approve", "reject", "needs_review"]:
-        raise HTTPException(status_code=400, detail="Invalid action. Must be: approve, reject, or needs_review")
-    
-    # Find the pending lead
-    pending_result = await db.execute(
-        select(PendingLead).where(
-            PendingLead.tenant_id == tenant_id,
-            PendingLead.source == request.source,
-            PendingLead.source_id == request.source_id,
-        )
-    )
-    pending = pending_result.scalar_one_or_none()
-    
-    if not pending:
-        raise HTTPException(status_code=404, detail="Pending lead not found")
-    
-    if request.action == "reject":
-        pending.status = PendingLeadStatusEnum.REJECTED
-        pending.reviewed_by_id = user.id
-        pending.reviewed_at = datetime.now(timezone.utc)
-        pending.review_notes = request.reviewer_notes
-        await db.commit()
-        return LeadSourceApprovalResponse(
-            success=True,
-            status="rejected",
-            message="Lead rejected",
-            requires_contact_creation=False,
-        )
-    
-    if request.action == "needs_review":
-        pending.status = PendingLeadStatusEnum.NEEDS_REVIEW
-        pending.reviewed_by_id = user.id
-        pending.reviewed_at = datetime.now(timezone.utc)
-        pending.review_notes = request.reviewer_notes
-        await db.commit()
-        return LeadSourceApprovalResponse(
-            success=True,
-            status="needs_review",
-            message="Lead flagged for additional review",
-            requires_contact_creation=False,
-        )
-    
-    # APPROVE - Create contact and lead in CRM
-    lead_data = request.lead_data or pending.raw_data
-    email = lead_data.get("email", "").lower()
-    
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required for lead creation")
-    
-    # Check if contact already exists
-    existing_contact_result = await db.execute(
-        select(Contact).where(Contact.tenant_id == tenant_id, Contact.email == email)
-    )
-    existing_contact = existing_contact_result.scalar_one_or_none()
-    
-    contact = existing_contact
-    if not contact:
-        # Create new contact
-        contact = Contact(
-            tenant_id=tenant_id,
-            first_name=lead_data.get("first_name", "") or pending.first_name or "",
-            last_name=lead_data.get("last_name", "") or pending.last_name or "",
-            email=email,
-            phone=lead_data.get("phone") or pending.phone,
-            title=lead_data.get("title") or pending.title,
-            company_name=lead_data.get("company_name") or pending.company_name,
-            source=lead_data.get("source", request.source),
-            utm_source=lead_data.get("utm_source", "firecrawl"),
-            utm_medium=lead_data.get("utm_medium", "organic"),
-            utm_campaign=lead_data.get("utm_campaign", request.source),
-            custom_fields=lead_data.get("custom_fields", {}),
-            created_by_id=user.id,
-            updated_by_id=user.id,
-        )
-        db.add(contact)
-        await db.flush()
-    
-    # Check if lead already exists for this contact
-    existing_lead_result = await db.execute(
-        select(Lead).where(Lead.tenant_id == tenant_id, Lead.contact_id == contact.id)
-    )
-    existing_lead = existing_lead_result.scalar_one_or_none()
-    
-    if existing_lead:
-        # Update pending lead reference
-        pending.status = PendingLeadStatusEnum.APPROVED
-        pending.reviewed_by_id = user.id
-        pending.reviewed_at = datetime.now(timezone.utc)
-        pending.created_lead_id = existing_lead.id
-        pending.created_contact_id = contact.id
-        await db.commit()
-        return LeadSourceApprovalResponse(
-            success=True,
-            lead_id=existing_lead.id,
-            status="approved",
-            message="Lead already exists for this contact",
-            requires_contact_creation=False,
-        )
-    
-    # Create lead
-    lead = Lead(
-        tenant_id=tenant_id,
-        contact_id=contact.id,
-        company_id=lead_data.get("company_id"),
-        title=lead_data.get("title", f"Inbound from {request.source}"),
-        description=lead_data.get("description"),
-        status="new",
-        owner_id=user.id,  # Assign to approver by default
-        source=lead_data.get("source", request.source),
-        source_id=lead_data.get("source_id") or pending.source_id,
-        utm_source=lead_data.get("utm_source", "firecrawl"),
-        utm_medium=lead_data.get("utm_medium", "organic"),
-        utm_campaign=lead_data.get("utm_campaign", request.source),
-        utm_content=lead_data.get("utm_content"),
-        utm_term=lead_data.get("utm_term"),
-        referrer_url=lead_data.get("referrer_url"),
-        landing_page=lead_data.get("landing_page"),
-        custom_fields=lead_data.get("custom_fields", {}),
-        created_by_id=user.id,
-        updated_by_id=user.id,
-    )
-    db.add(lead)
-    await db.flush()
-    
-    # Update pending lead
-    pending.status = PendingLeadStatusEnum.APPROVED
-    pending.reviewed_by_id = user.id
-    pending.reviewed_at = datetime.now(timezone.utc)
-    pending.review_notes = request.reviewer_notes
-    pending.created_lead_id = lead.id
-    pending.created_contact_id = contact.id
-    
-    # Create activity
-    activity = Activity(
-        tenant_id=tenant_id,
-        lead_id=lead.id,
-        contact_id=contact.id,
-        type=ActivityTypeEnum.AI_ACTION,
-        subject=f"Lead approved from {request.source}",
-        description=f"Lead imported from {request.source} and approved by {user.full_name}",
-        user_id=user.id,
-        is_ai_generated=False,
-        metadata={"source": request.source, "source_id": request.source_id},
-    )
-    db.add(activity)
+    from app.services.crm.lead_review import review
+    result = await review(db, tenant_id, current_user[0].id, request.source, request.source_id,
+                          request.action, request.lead_data, request.reviewer_notes)
     await db.commit()
-    await db.refresh(lead)
-    
-    return LeadSourceApprovalResponse(
-        success=True,
-        lead_id=lead.id,
-        status="approved",
-        message="Lead approved and created in CRM",
-        requires_contact_creation=not existing_contact,
-    )
+    return result
 
 
 @router.post("/bulk-approve", response_model=BulkLeadApprovalResponse)
@@ -393,137 +249,29 @@ async def bulk_approve_leads(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
-    """
-    Bulk approve or reject multiple pending leads.
-    """
-    user, membership = current_user
-    
-    if request.action not in ["approve", "reject"]:
-        raise HTTPException(status_code=400, detail="Invalid action. Must be: approve or reject")
-    
-    approved = 0
-    rejected = 0
-    failed = 0
+    from app.services.crm.lead_review import review
+    if request.action not in {"approve", "reject"}:
+        raise HTTPException(422, "Invalid bulk review action")
+    approved = rejected = 0
     errors = []
-    
-    for lead_id in request.lead_ids:
+    for lead_id in dict.fromkeys(request.lead_ids):
         try:
-            pending_result = await db.execute(
-                select(PendingLead).where(
-                    PendingLead.id == lead_id,
-                    PendingLead.tenant_id == tenant_id,
-                )
-            )
-            pending = pending_result.scalar_one_or_none()
-            
-            if not pending:
-                failed += 1
-                errors.append({"lead_id": str(lead_id), "error": "Pending lead not found"})
-                continue
-            
-            if request.action == "approve":
-                # Auto-create contact and lead
-                lead_data = pending.raw_data
-                email = lead_data.get("email", "").lower()
-                
-                if not email:
-                    failed += 1
-                    errors.append({"lead_id": str(lead_id), "error": "No email in lead data"})
-                    continue
-                
-                # Check/create contact
-                contact_result = await db.execute(
-                    select(Contact).where(Contact.tenant_id == tenant_id, Contact.email == email)
-                )
-                contact = contact_result.scalar_one_or_none()
-                
-                if not contact:
-                    contact = Contact(
-                        tenant_id=tenant_id,
-                        first_name=lead_data.get("first_name", "") or pending.first_name or "",
-                        last_name=lead_data.get("last_name", "") or pending.last_name or "",
-                        email=email,
-                        phone=lead_data.get("phone") or pending.phone,
-                        title=lead_data.get("title") or pending.title,
-                        company_name=lead_data.get("company_name") or pending.company_name,
-                        source=pending.source,
-                        utm_source=lead_data.get("utm_source", "firecrawl"),
-                        utm_medium=lead_data.get("utm_medium", "organic"),
-                        utm_campaign=lead_data.get("utm_campaign", pending.source),
-                        custom_fields=lead_data.get("custom_fields", {}),
-                        created_by_id=user.id,
-                        updated_by_id=user.id,
-                    )
-                    db.add(contact)
-                    await db.flush()
-                
-                # Create lead
-                lead = Lead(
-                    tenant_id=tenant_id,
-                    contact_id=contact.id,
-                    title=lead_data.get("title", f"Inbound from {pending.source}"),
-                    status="new",
-                    owner_id=user.id,
-                    source=pending.source,
-                    source_id=pending.source_id,
-                    utm_source=lead_data.get("utm_source", "firecrawl"),
-                    utm_medium=lead_data.get("utm_medium", "organic"),
-                    utm_campaign=lead_data.get("utm_campaign", pending.source),
-                    custom_fields=lead_data.get("custom_fields", {}),
-                    created_by_id=user.id,
-                    updated_by_id=user.id,
-                )
-                db.add(lead)
-                await db.flush()
-                
-                # Update pending
-                pending.status = PendingLeadStatusEnum.APPROVED
-                pending.reviewed_by_id = user.id
-                pending.reviewed_at = datetime.now(timezone.utc)
-                pending.review_notes = request.reviewer_notes
-                pending.created_lead_id = lead.id
-                pending.created_contact_id = contact.id
-                
-                # Activity
-                activity = Activity(
-                    tenant_id=tenant_id,
-                    lead_id=lead.id,
-                    contact_id=contact.id,
-                    type=ActivityTypeEnum.AI_ACTION,
-                    subject=f"Lead approved from {pending.source}",
-                    description=f"Lead imported from {pending.source} and approved by {user.full_name}",
-                    user_id=user.id,
-                    is_ai_generated=False,
-                    metadata={"source": pending.source, "source_id": pending.source_id},
-                )
-                db.add(activity)
-                
-            else:
-                # Reject
-                pending.status = PendingLeadStatusEnum.REJECTED
-                pending.reviewed_by_id = user.id
-                pending.reviewed_at = datetime.now(timezone.utc)
-                pending.review_notes = request.reviewer_notes
-            
+            async with db.begin_nested():
+                pending = await db.scalar(select(PendingLead).where(
+                    PendingLead.id == lead_id, PendingLead.tenant_id == tenant_id))
+                if pending is None:
+                    raise HTTPException(404, "Pending lead not found")
+                await review(db, tenant_id, current_user[0].id, pending.source, pending.source_id,
+                             request.action, {}, request.reviewer_notes)
             if request.action == "approve":
                 approved += 1
             else:
                 rejected += 1
-                
-        except Exception as e:
-            failed += 1
-            errors.append({"lead_id": str(lead_id), "error": str(e)})
-    
+        except HTTPException as exc:
+            errors.append({"lead_id": str(lead_id), "error": exc.detail})
     await db.commit()
-    
-    return BulkLeadApprovalResponse(
-        success=failed == 0,
-        processed=approved + rejected,
-        approved=approved,
-        rejected=rejected,
-        failed=failed,
-        errors=errors,
-    )
+    return BulkLeadApprovalResponse(success=not errors, processed=approved + rejected,
+                                    approved=approved, rejected=rejected, failed=len(errors), errors=errors)
 
 
 # Also add a general lead search endpoint that works with all integrations
@@ -560,7 +308,7 @@ async def search_leads_all_integrations(
     for integration in integrations:
         if integration.type == "firecrawl":
             adapter = FirecrawlAdapter()
-            credentials = integration.config.get("credentials", {})
+            credentials = await firecrawl_credentials(db, tenant_id, integration.id)
             if not credentials.get("api_key"):
                 continue
             

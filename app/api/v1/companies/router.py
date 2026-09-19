@@ -1,3 +1,4 @@
+from app.api.deps import require_permission
 """
 Companies API routes for Globexa CRM.
 """
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/companies", tags=["Companies"])
 @router.post("", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
 async def create_company(
     data: CompanyCreate,
-    current_user: tuple = Depends(require_contacts_write),
+    current_user: tuple = Depends(require_permission("companies:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -58,7 +59,7 @@ async def list_companies(
     search: Optional[str] = Query(None),
     industry: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
-    current_user: tuple = Depends(require_contacts_read),
+    current_user: tuple = Depends(require_permission("companies:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -97,7 +98,7 @@ async def list_companies(
 @router.get("/{company_id}", response_model=CompanyResponse)
 async def get_company(
     company_id: UUID,
-    current_user: tuple = Depends(require_contacts_read),
+    current_user: tuple = Depends(require_permission("companies:read")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -117,7 +118,7 @@ async def get_company(
 async def update_company(
     company_id: UUID,
     data: CompanyUpdate,
-    current_user: tuple = Depends(require_contacts_write),
+    current_user: tuple = Depends(require_permission("companies:write")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
@@ -152,7 +153,7 @@ async def update_company(
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_company(
     company_id: UUID,
-    current_user: tuple = Depends(require_contacts_write),
+    current_user: tuple = Depends(require_permission("companies:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):

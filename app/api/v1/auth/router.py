@@ -1,9 +1,10 @@
+from uuid import UUID
 """
 Authentication API routes for Globexa CRM.
 Register, login, Google OAuth, token refresh, current user.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,15 +91,46 @@ async def login(
     return tokens
 
 
+@router.get("/google/start")
+async def google_start(db: AsyncSession = Depends(get_db)):
+    from starlette.responses import RedirectResponse
+    from app.services.auth.google_state import COOKIE, TTL
+    try:
+        url, binding = await AuthService(db).google_login_start()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    response = RedirectResponse(url, status_code=302)
+    response.set_cookie(COOKIE, binding, max_age=TTL, httponly=True,
+                        secure=settings.app.environment == "production", samesite="lax",
+                        path="/api/v1/auth/google")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@router.get("/google/callback", response_model=TokenResponse)
+async def google_callback(request: Request, response: Response,
+                          code: str = Query(min_length=1, max_length=4096),
+                          state: str = Query(min_length=20, max_length=128),
+                          db: AsyncSession = Depends(get_db)):
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return await google_auth(GoogleAuthRequest(code=code, state=state), request, response, db)
+
+
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(
     data: GoogleAuthRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate with Google OAuth."""
     auth_service = AuthService(db)
     try:
-        user, tenant = await auth_service.google_login(data.code)
+        from app.services.auth.google_state import COOKIE
+        user, tenant = await auth_service.google_login(data.code, data.state, request.cookies.get(COOKIE, ""))
+        response.delete_cookie(COOKIE, path="/api/v1/auth/google")
+        response.headers["Cache-Control"] = "no-store"
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -180,7 +212,7 @@ async def logout(
 # Tenant switching endpoint
 @router.post("/switch-tenant/{tenant_id}", response_model=TokenResponse)
 async def switch_tenant(
-    tenant_id: str,
+    tenant_id: UUID,
     current_user: tuple[User, Membership] = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -195,7 +227,7 @@ async def switch_tenant(
     result = await db.execute(
         select(Membership).where(
             Membership.user_id == user.id,
-            Membership.tenant_id == UUID(tenant_id),
+            Membership.tenant_id == tenant_id,
         )
     )
     membership = result.scalar_one_or_none()

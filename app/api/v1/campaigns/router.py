@@ -1,3 +1,4 @@
+from app.api.deps import require_permission
 """
 Campaign API routes for Globexa CRM.
 """
@@ -283,7 +284,7 @@ async def update_campaign(
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_campaign(
     campaign_id: UUID,
-    current_user: tuple = Depends(require_campaigns_write),
+    current_user: tuple = Depends(require_permission("campaigns:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):

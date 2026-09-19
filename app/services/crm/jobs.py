@@ -191,6 +191,40 @@ async def _execute_job(db, tenant_id, job_id, *, gateway=None):
             job.completed_at = None if result.get("pending") else now()
             await db.commit()
             return job
+        if job.kind == "campaign_send":
+            # The durable claim released our locks. Refresh all delivery decisions
+            # after token work and retain these locks through the provider call.
+            await db.refresh(job, with_for_update=True)
+            await db.refresh(integration, with_for_update=True)
+            adapter = adapter_for(integration)
+            token = await access_token(db, tenant_id, integration)
+            await authorize(db, tenant_id, job.actor_id, "campaigns:send")
+            await db.refresh(campaign, with_for_update=True)
+            await db.refresh(recipient, with_for_update=True)
+            await db.refresh(contact, with_for_update=True)
+            earlier = (await db.scalars(select(CampaignRecipient).where(
+                CampaignRecipient.tenant_id == tenant_id,
+                CampaignRecipient.campaign_id == campaign.id,
+                CampaignRecipient.contact_id == contact.id,
+                CampaignRecipient.created_at <= recipient.created_at,
+                CampaignRecipient.id != recipient.id,
+            ).execution_options(populate_existing=True))).all()
+            blocked = await suppressed(db, tenant_id, recipient.email, contact) or any(
+                r.replied_at or r.bounced_at or r.unsubscribed_at for r in earlier)
+            campaign_state = getattr(campaign.status, "value", campaign.status)
+            if campaign_state != "sending" or blocked:
+                job.claimed_at = None
+                if blocked:
+                    recipient.status = CampaignRecipientStatusEnum.SUPPRESSED
+                    job.status, job.result = "completed", {"suppressed": True}
+                    await update_stats(db, tenant_id, campaign.id)
+                elif campaign_state == "paused":
+                    job.status, job.available_at = "retry", now() + timedelta(seconds=30)
+                    job.attempts = max(0, job.attempts - 1)
+                else:
+                    job.status = "cancelled"
+                await db.commit()
+                return job
         async with db.begin_nested():
             if job.kind in {"campaign_send", "message_send"}:
                 if job.kind == "message_send":

@@ -11,8 +11,10 @@ def now():
     return datetime.now(timezone.utc)
 
 
-async def owned(db, model, tenant_id, entity_id, lock=False):
-    stmt = select(model).where(model.tenant_id == tenant_id, model.id == entity_id)
+async def owned(db, model, tenant_id, entity_id, lock=False, *, actor_id=None):
+    from app.core.record_access import record_scope
+    stmt = select(model).where(model.tenant_id == tenant_id, model.id == entity_id,
+                               await record_scope(db, model, tenant_id, actor_id))
     row = await db.scalar(stmt.with_for_update() if lock else stmt)
     if row is None:
         raise HTTPException(404, "Resource not found")

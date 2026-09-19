@@ -1,3 +1,4 @@
+from app.core.record_access import record_scope
 """Frontend CRM contracts; shared services enforce permissions again in workers."""
 
 from typing import Literal
@@ -125,7 +126,7 @@ async def conversations(
     db=Depends(get_db),
 ):
     await authorize(db, *actor, "conversations:read")
-    query = select(Conversation).where(Conversation.tenant_id == actor[0])
+    query = select(Conversation).where(Conversation.tenant_id == actor[0], await record_scope(db, Conversation, *actor))
     if q:
         query = query.where(
             Conversation.subject.ilike(

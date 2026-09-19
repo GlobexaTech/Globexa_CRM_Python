@@ -37,6 +37,19 @@ def check_assignment(current_user, role):
     return target
 
 
+async def membership_writer(db, tenant_id, current_user):
+    from app.services.crm.common import serial_key
+    from app.core.rbac import ROLE_HIERARCHY
+    await serial_key(db, tenant_id, "membership-administration")
+    member = await db.scalar(select(Membership).join(User, User.id == Membership.user_id).where(
+        Membership.tenant_id == tenant_id, Membership.user_id == current_user[0].id,
+        User.is_active.is_(True),
+    ).execution_options(populate_existing=True))
+    if not member or ROLE_HIERARCHY.get(member.role, 0) < ROLE_HIERARCHY[RoleEnum.SALES_MANAGER]:
+        raise HTTPException(403, "Membership administration permission required")
+    return current_user[0], member
+
+
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
@@ -48,6 +61,7 @@ async def create_user(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Create a new user in the current tenant."""
+    current_user = await membership_writer(db, tenant_id, current_user)
     check_assignment(current_user, data.role)
     from app.services.crm.common import meter
     await meter(db, tenant_id, current_user[0].id, "users")
@@ -97,7 +111,7 @@ async def create_user(
 @router.get("", response_model=PaginatedResponse)
 async def list_users(
     params: PaginationParams = Depends(),
-    role: Optional[str] = Query(None),
+    role: Optional[RoleEnum] = Query(None),
     is_active: Optional[bool] = Query(None),
     current_user: tuple = Depends(require_manager_or_above),
     db: AsyncSession = Depends(get_db),
@@ -186,11 +200,8 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
-    # Prevent self-demotion
-    current_user_obj, current_membership = current_user
-    if user.id == current_user_obj.id:
-        # Don't allow deactivating yourself
-        pass
+    if user.id != current_user[0].id:
+        raise HTTPException(403, "Global profile fields can only be changed by the account holder")
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -209,6 +220,7 @@ async def delete_user(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Remove a user from the current tenant (soft delete - removes membership)."""
+    current_user = await membership_writer(db, tenant_id, current_user)
     current_user_obj, current_membership = current_user
 
     if user_id == current_user_obj.id:
@@ -218,7 +230,7 @@ async def delete_user(
         select(Membership).where(
             Membership.user_id == user_id,
             Membership.tenant_id == tenant_id,
-        )
+        ).execution_options(populate_existing=True)
     )
     membership = result.scalar_one_or_none()
     if not membership:
@@ -250,6 +262,7 @@ async def add_user_to_tenant(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Add an existing user to the current tenant."""
+    current_user = await membership_writer(db, tenant_id, current_user)
     check_assignment(current_user, data.role)
     # Verify user exists
     result = await db.execute(select(User).where(User.id == user_id))
@@ -262,7 +275,7 @@ async def add_user_to_tenant(
         select(Membership).where(
             Membership.user_id == user_id,
             Membership.tenant_id == tenant_id,
-        )
+        ).execution_options(populate_existing=True)
     )
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="User is already a member of this tenant")
@@ -289,13 +302,14 @@ async def update_membership(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Update a user's membership in the current tenant."""
+    current_user = await membership_writer(db, tenant_id, current_user)
     current_user_obj, current_membership = current_user
 
     result = await db.execute(
         select(Membership).where(
             Membership.user_id == user_id,
             Membership.tenant_id == tenant_id,
-        )
+        ).execution_options(populate_existing=True)
     )
     membership = result.scalar_one_or_none()
     if not membership:
@@ -344,6 +358,7 @@ async def remove_user_from_tenant(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Remove a user from the current tenant."""
+    current_user = await membership_writer(db, tenant_id, current_user)
     current_user_obj, _ = current_user
 
     if user_id == current_user_obj.id:
@@ -353,7 +368,7 @@ async def remove_user_from_tenant(
         select(Membership).where(
             Membership.user_id == user_id,
             Membership.tenant_id == tenant_id,
-        )
+        ).execution_options(populate_existing=True)
     )
     membership = result.scalar_one_or_none()
     if not membership:

@@ -831,6 +831,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/google/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Google Start */
+        get: operations["google_start_api_v1_auth_google_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Google Callback */
+        get: operations["google_callback_api_v1_auth_google_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/google": {
         parameters: {
             query?: never;
@@ -1015,7 +1049,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Tenant
-         * @description Delete tenant (admin only).
+         * @description Reject hard deletion while workspace audit retention is required.
          */
         delete: operations["delete_tenant_api_v1_tenants__tenant_id__delete"];
         options?: never;
@@ -1453,11 +1487,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Approve Reject Lead
-         * @description Approve or reject a lead from external source (Firecrawl, etc.).
-         *     If approved, creates Contact/Lead in CRM and updates PendingLead.
-         */
+        /** Approve Reject Lead */
         post: operations["approve_reject_lead_api_v1_leads_firecrawl_approve_post"];
         delete?: never;
         options?: never;
@@ -1474,10 +1504,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Bulk Approve Leads
-         * @description Bulk approve or reject multiple pending leads.
-         */
+        /** Bulk Approve Leads */
         post: operations["bulk_approve_leads_api_v1_leads_firecrawl_bulk_approve_post"];
         delete?: never;
         options?: never;
@@ -2206,6 +2233,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integrations/lead-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Lead Sources
+         * @description List lead source configurations.
+         */
+        get: operations["list_lead_sources_api_v1_integrations_lead_sources_get"];
+        put?: never;
+        /**
+         * Create Lead Source
+         * @description Create lead source configuration.
+         */
+        post: operations["create_lead_source_api_v1_integrations_lead_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/lead-sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Lead Source
+         * @description Delete lead source configuration.
+         */
+        delete: operations["delete_lead_source_api_v1_integrations_lead_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Lead Source
+         * @description Update lead source configuration.
+         */
+        patch: operations["update_lead_source_api_v1_integrations_lead_sources__source_id__patch"];
+        trace?: never;
+    };
     "/api/v1/integrations/{integration_id}": {
         parameters: {
             query?: never;
@@ -2382,54 +2457,6 @@ export interface paths {
          * @description Update webhook endpoint.
          */
         patch: operations["update_webhook_api_v1_integrations_webhooks__webhook_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/integrations/lead-sources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Lead Sources
-         * @description List lead source configurations.
-         */
-        get: operations["list_lead_sources_api_v1_integrations_lead_sources_get"];
-        put?: never;
-        /**
-         * Create Lead Source
-         * @description Create lead source configuration.
-         */
-        post: operations["create_lead_source_api_v1_integrations_lead_sources_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/integrations/lead-sources/{source_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Lead Source
-         * @description Delete lead source configuration.
-         */
-        delete: operations["delete_lead_source_api_v1_integrations_lead_sources__source_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Lead Source
-         * @description Update lead source configuration.
-         */
-        patch: operations["update_lead_source_api_v1_integrations_lead_sources__source_id__patch"];
         trace?: never;
     };
     "/api/v1/integrations/attribution/touchpoints": {
@@ -4546,6 +4573,8 @@ export interface components {
         GoogleAuthRequest: {
             /** Code */
             code: string;
+            /** State */
+            state: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4570,6 +4599,12 @@ export interface components {
              */
             timestamp: string;
         };
+        /**
+         * IntegrationTypeEnum
+         * @description Integration types per blueprint lead sources.
+         * @enum {string}
+         */
+        IntegrationTypeEnum: "meta" | "google_ads" | "linkedin" | "apollo" | "whatsapp" | "csv" | "webhook" | "email_inbox" | "website_form" | "website_chatbot" | "ai_lead_miner" | "firecrawl" | "appointments" | "referral" | "partner" | "api" | "other";
         /** JobResponse */
         JobResponse: {
             /**
@@ -4618,7 +4653,8 @@ export interface components {
             source?: components["schemas"]["LeadSourceEnum"] | null;
             /** Source Id */
             source_id?: string | null;
-            utm_source?: components["schemas"]["LeadSourceEnum"] | null;
+            /** Utm Source */
+            utm_source?: string | null;
             /** Utm Medium */
             utm_medium?: string | null;
             /** Utm Campaign */
@@ -4666,7 +4702,8 @@ export interface components {
             source?: components["schemas"]["LeadSourceEnum"] | null;
             /** Source Id */
             source_id?: string | null;
-            utm_source?: components["schemas"]["LeadSourceEnum"] | null;
+            /** Utm Source */
+            utm_source?: string | null;
             /** Utm Medium */
             utm_medium?: string | null;
             /** Utm Campaign */
@@ -4778,6 +4815,93 @@ export interface components {
          * @enum {string}
          */
         LeadSourceEnum: "website" | "meta_lead_ads" | "facebook" | "instagram" | "linkedin" | "google_ads" | "csv_import" | "whatsapp" | "email_inbox" | "apollo" | "website_chatbot" | "ai_lead_miner" | "referral" | "manual" | "api" | "webhook" | "appointments" | "partner_integration" | "other";
+        /** LeadSourceInput */
+        LeadSourceInput: {
+            /** Source Key */
+            source_key: string;
+            /** Display Name */
+            display_name: string;
+            source_type: components["schemas"]["IntegrationTypeEnum"];
+            /** Description */
+            description?: string | null;
+            /** Default Utm Source */
+            default_utm_source?: string | null;
+            /** Default Utm Medium */
+            default_utm_medium?: string | null;
+            /** Default Utm Campaign */
+            default_utm_campaign?: string | null;
+            /**
+             * Auto Create Contact
+             * @default true
+             */
+            auto_create_contact: boolean;
+            /**
+             * Auto Create Company
+             * @default true
+             */
+            auto_create_company: boolean;
+            /** @default new */
+            default_lead_status: components["schemas"]["LeadStatusEnum"];
+            /** Default Owner Id */
+            default_owner_id?: string | null;
+            /** Deduplication Fields */
+            deduplication_fields?: ("email" | "phone")[];
+            /** Icon */
+            icon?: string | null;
+            /** Color */
+            color?: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            };
+        };
+        /** LeadSourcePatch */
+        LeadSourcePatch: {
+            /** Source Key */
+            source_key?: string;
+            /** Display Name */
+            display_name?: string;
+            source_type?: components["schemas"]["IntegrationTypeEnum"];
+            /** Description */
+            description?: string | null;
+            /** Default Utm Source */
+            default_utm_source?: string | null;
+            /** Default Utm Medium */
+            default_utm_medium?: string | null;
+            /** Default Utm Campaign */
+            default_utm_campaign?: string | null;
+            /** Auto Create Contact */
+            auto_create_contact?: boolean;
+            /** Auto Create Company */
+            auto_create_company?: boolean;
+            default_lead_status?: components["schemas"]["LeadStatusEnum"];
+            /** Default Owner Id */
+            default_owner_id?: string | null;
+            /** Deduplication Fields */
+            deduplication_fields?: ("email" | "phone")[];
+            /** Icon */
+            icon?: string | null;
+            /** Color */
+            color?: string | null;
+            /** Is Active */
+            is_active?: boolean;
+            /** Sort Order */
+            sort_order?: number;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * LeadStatusEnum
          * @description Lead status per blueprint pipeline.
@@ -4800,7 +4924,8 @@ export interface components {
             source?: components["schemas"]["LeadSourceEnum"] | null;
             /** Source Id */
             source_id?: string | null;
-            utm_source?: components["schemas"]["LeadSourceEnum"] | null;
+            /** Utm Source */
+            utm_source?: string | null;
             /** Utm Medium */
             utm_medium?: string | null;
             /** Utm Campaign */
@@ -5214,6 +5339,12 @@ export interface components {
             /** Assigned Reviewer Id */
             assigned_reviewer_id?: string | null;
         };
+        /**
+         * PendingLeadStatusEnum
+         * @description Pending lead approval status.
+         * @enum {string}
+         */
+        PendingLeadStatusEnum: "pending" | "approved" | "rejected" | "needs_review";
         /** PipelineCreate */
         PipelineCreate: {
             /** Name */
@@ -5293,6 +5424,12 @@ export interface components {
             /** Correlation Id */
             correlation_id?: string | null;
         };
+        /**
+         * RoleEnum
+         * @description System roles per blueprint.
+         * @enum {string}
+         */
+        RoleEnum: "owner" | "admin" | "sales_manager" | "sales_executive" | "marketing" | "viewer" | "ai_agent";
         /** RunLeadMinerRequest */
         RunLeadMinerRequest: {
             /** Icp Definition */
@@ -7928,6 +8065,58 @@ export interface operations {
             };
         };
     };
+    google_start_api_v1_auth_google_start_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_callback_api_v1_auth_google_callback_get: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     google_auth_api_v1_auth_google_post: {
         parameters: {
             query?: never;
@@ -8448,7 +8637,7 @@ export interface operations {
     list_users_api_v1_users_get: {
         parameters: {
             query?: {
-                role?: string | null;
+                role?: components["schemas"]["RoleEnum"] | null;
                 is_active?: boolean | null;
                 page?: number;
                 page_size?: number;
@@ -9104,9 +9293,9 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string | null;
-                status?: string | null;
+                status?: components["schemas"]["LeadStatusEnum"] | null;
                 owner_id?: string | null;
-                source?: string | null;
+                source?: components["schemas"]["LeadSourceEnum"] | null;
                 is_qualified?: boolean | null;
                 page?: number;
                 page_size?: number;
@@ -9422,7 +9611,7 @@ export interface operations {
         parameters: {
             query?: {
                 source?: string | null;
-                status?: string | null;
+                status?: components["schemas"]["PendingLeadStatusEnum"] | null;
                 page?: number;
                 page_size?: number;
             };
@@ -10113,7 +10302,7 @@ export interface operations {
     list_tasks_api_v1_tasks_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: components["schemas"]["TaskStatusEnum"] | null;
                 owner_id?: string | null;
                 lead_id?: string | null;
                 deal_id?: string | null;
@@ -11528,6 +11717,146 @@ export interface operations {
             };
         };
     };
+    list_lead_sources_api_v1_integrations_lead_sources_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_lead_source_api_v1_integrations_lead_sources_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadSourceInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_lead_source_api_v1_integrations_lead_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_lead_source_api_v1_integrations_lead_sources__source_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadSourcePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_integration_api_v1_integrations__integration_id__get: {
         parameters: {
             query?: never;
@@ -12006,150 +12335,6 @@ export interface operations {
             };
             path: {
                 webhook_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_lead_sources_api_v1_integrations_lead_sources_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_lead_source_api_v1_integrations_lead_sources_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_lead_source_api_v1_integrations_lead_sources__source_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_lead_source_api_v1_integrations_lead_sources__source_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                source_id: string;
             };
             cookie?: never;
         };

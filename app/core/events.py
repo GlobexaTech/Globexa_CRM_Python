@@ -116,6 +116,12 @@ def capture_changes(db, flush_context, instances):
             obj.id = uuid4()
         actor = db.info.get("security_context", (None, current_user.get()))[1]
         name = create_events.get(type(obj)) if new else None
+        if isinstance(obj, Task) and not deleted:
+            # Keep the invariant for API, AI and automation writes alike.
+            if getattr(obj.status, "value", obj.status) == "completed":
+                obj.completed_at = obj.completed_at or datetime.now(timezone.utc)
+            else:
+                obj.completed_at = None
         if isinstance(obj, Lead) and not new and not deleted:
             name = "lead.updated"
         if isinstance(obj, Contact) and not new and not deleted:

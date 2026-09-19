@@ -40,7 +40,7 @@ export default function CrmForm({
   onSaved: () => void;
   relation?: { key: string; id: string };
 }) {
-  const { session } = useSession();
+  const { session, can } = useSession();
   const action = useAction();
   const original = (record ?? {}) as Record<string, unknown>;
   const [values, setValues] = useState<Record<string, string | boolean>>(
@@ -60,7 +60,9 @@ export default function CrmForm({
       status: String(original.status ?? (kind === "tasks" ? "pending" : "new")),
       priority: String(original.priority ?? "medium"),
       source: String(original.source ?? (kind === "leads" ? "manual" : "")),
-      owner_id: String(original.owner_id ?? session?.user?.id ?? ""),
+      owner_id: String(
+        record ? (original.owner_id ?? "") : (session?.user?.id ?? ""),
+      ),
       contact_id: String(original.contact_id ?? ""),
       company_id: String(original.company_id ?? ""),
       lead_id: String(original.lead_id ?? ""),
@@ -110,7 +112,9 @@ export default function CrmForm({
         description: nullable("description"),
         contact_id: nullable("contact_id"),
         company_id: nullable("company_id"),
-        owner_id: nullable("owner_id"),
+        ...(!record || can("leads:assign")
+          ? { owner_id: nullable("owner_id") }
+          : {}),
         status: text("status") as LeadCreate["status"],
         source: nullable("source") as LeadCreate["source"],
       };
@@ -285,7 +289,7 @@ export default function CrmForm({
             onChange={(v) => set("contact_id", v)}
           />
         )}
-        {(kind === "leads" || kind === "tasks") && (
+        {(kind === "tasks" || (kind === "leads" && can("leads:assign"))) && (
           <EntityPicker
             entity="users"
             title="Owner"

@@ -50,7 +50,7 @@ async def list_workflows(identity=Depends(require_admin), tenant_id: UUID = Depe
 @router.get("/search")
 async def search(entity: str, q: str, identity=Depends(get_current_active_user),
                   tenant_id: UUID = Depends(get_tenant_id), db: AsyncSession = Depends(get_db)):
-    permission = {"leads": "leads:read", "contacts": "contacts:read", "messages": "ai:chat",
+    permission = {"leads": "leads:read", "contacts": "contacts:read", "messages": "conversations:read",
                   "tasks": "tasks:read", "campaigns": "campaigns:read", "agents": "ai:chat"}.get(entity)
     if permission not in get_role_permissions(identity[1].role):
         raise HTTPException(403, "Search permission required")

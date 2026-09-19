@@ -1,3 +1,6 @@
+from app.schemas.lead_sources import LeadSourceInput, LeadSourcePatch
+from app.services.crm.common import serial_key
+from app.models import Membership
 from sqlalchemy import update, delete
 from datetime import timedelta
 """
@@ -153,6 +156,152 @@ async def list_integrations(
         total=total,
         params=params,
     )
+
+
+@router.post("/lead-sources", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_lead_source(
+    data: LeadSourceInput,
+    current_user: tuple = Depends(require_integrations_write),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID = Depends(get_tenant_id),
+):
+    """Create lead source configuration."""
+    user, _ = current_user
+    data = data.model_dump()
+    await serial_key(db, tenant_id, "lead-source:" + data["source_key"])
+    if data.get("default_owner_id") and not await db.scalar(select(Membership.id).where(
+        Membership.tenant_id == tenant_id, Membership.user_id == data["default_owner_id"])):
+        raise HTTPException(404, "Owner not found in this tenant")
+
+    # Check uniqueness
+    result = await db.execute(
+        select(LeadSourceConfig).where(
+            LeadSourceConfig.tenant_id == tenant_id,
+            LeadSourceConfig.source_key == data["source_key"],
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Source key already exists")
+
+    source = LeadSourceConfig(
+        tenant_id=tenant_id,
+        source_key=data["source_key"],
+        display_name=data["display_name"],
+        description=data.get("description"),
+        source_type=data["source_type"],
+        default_utm_source=data.get("default_utm_source"),
+        default_utm_medium=data.get("default_utm_medium"),
+        default_utm_campaign=data.get("default_utm_campaign"),
+        auto_create_contact=data.get("auto_create_contact", True),
+        auto_create_company=data.get("auto_create_company", True),
+        default_lead_status=data.get("default_lead_status", "new"),
+        default_owner_id=data.get("default_owner_id"),
+        deduplication_fields=data.get("deduplication_fields", ["email"]),
+        icon=data.get("icon"),
+        color=data.get("color"),
+        is_active=data.get("is_active", True),
+        sort_order=data.get("sort_order", 0),
+        custom_fields=data.get("custom_fields", {}),
+    )
+    db.add(source)
+    await db.commit()
+    await db.refresh(source)
+
+    return {"id": str(source.id), "message": "Lead source created"}
+
+
+@router.get("/lead-sources", response_model=List[dict])
+async def list_lead_sources(
+    current_user: tuple = Depends(require_integrations_read),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID = Depends(get_tenant_id),
+):
+    """List lead source configurations."""
+    result = await db.execute(
+        select(LeadSourceConfig)
+        .where(LeadSourceConfig.tenant_id == tenant_id)
+        .order_by(LeadSourceConfig.sort_order, LeadSourceConfig.display_name)
+    )
+    sources = result.scalars().all()
+
+    return [{
+        "id": str(s.id),
+        "source_key": s.source_key,
+        "display_name": s.display_name,
+        "description": s.description,
+        "source_type": s.source_type.value,
+        "default_utm_source": s.default_utm_source,
+        "default_utm_medium": s.default_utm_medium,
+        "default_utm_campaign": s.default_utm_campaign,
+        "auto_create_contact": s.auto_create_contact,
+        "auto_create_company": s.auto_create_company,
+        "default_lead_status": s.default_lead_status,
+        "deduplication_fields": s.deduplication_fields,
+        "icon": s.icon,
+        "color": s.color,
+        "is_active": s.is_active,
+        "sort_order": s.sort_order,
+    } for s in sources]
+
+
+@router.patch("/lead-sources/{source_id}", response_model=dict)
+async def update_lead_source(
+    source_id: UUID,
+    data: LeadSourcePatch,
+    current_user: tuple = Depends(require_integrations_write),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID = Depends(get_tenant_id),
+):
+    """Update lead source configuration."""
+    result = await db.execute(
+        select(LeadSourceConfig).where(
+            LeadSourceConfig.id == source_id,
+            LeadSourceConfig.tenant_id == tenant_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Lead source not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+    if update_data.get("source_key"):
+        await serial_key(db, tenant_id, "lead-source:" + update_data["source_key"])
+        if await db.scalar(select(LeadSourceConfig.id).where(
+            LeadSourceConfig.tenant_id == tenant_id, LeadSourceConfig.id != source_id,
+            LeadSourceConfig.source_key == update_data["source_key"])):
+            raise HTTPException(400, "Source key already exists")
+    if update_data.get("default_owner_id") and not await db.scalar(select(Membership.id).where(
+        Membership.tenant_id == tenant_id, Membership.user_id == update_data["default_owner_id"])):
+        raise HTTPException(404, "Owner not found in this tenant")
+    for field, value in update_data.items():
+        setattr(source, field, value)
+
+    source.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"id": str(source.id), "message": "Lead source updated"}
+
+
+@router.delete("/lead-sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lead_source(
+    source_id: UUID,
+    current_user: tuple = Depends(require_integrations_write),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID = Depends(get_tenant_id),
+):
+    """Delete lead source configuration."""
+    result = await db.execute(
+        select(LeadSourceConfig).where(
+            LeadSourceConfig.id == source_id,
+            LeadSourceConfig.tenant_id == tenant_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Lead source not found")
+
+    await db.delete(source)
+    await db.commit()
+
 
 
 @router.get("/{integration_id}", response_model=dict)
@@ -447,6 +596,7 @@ async def delete_credential(
         raise HTTPException(status_code=404, detail="Credential not found")
 
     await db.delete(credential)
+    await db.flush()
     
     # Check if integration has other credentials
     integration_result = await db.execute(
@@ -700,142 +850,6 @@ async def delete_webhook(
 # =============================================================================
 # Lead Source Configs
 # =============================================================================
-
-@router.post("/lead-sources", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def create_lead_source(
-    data: dict,
-    current_user: tuple = Depends(require_integrations_write),
-    db: AsyncSession = Depends(get_db),
-    tenant_id: UUID = Depends(get_tenant_id),
-):
-    """Create lead source configuration."""
-    user, _ = current_user
-
-    # Check uniqueness
-    result = await db.execute(
-        select(LeadSourceConfig).where(
-            LeadSourceConfig.tenant_id == tenant_id,
-            LeadSourceConfig.source_key == data["source_key"],
-        )
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Source key already exists")
-
-    source = LeadSourceConfig(
-        tenant_id=tenant_id,
-        source_key=data["source_key"],
-        display_name=data["display_name"],
-        description=data.get("description"),
-        source_type=data["source_type"],
-        default_utm_source=data.get("default_utm_source"),
-        default_utm_medium=data.get("default_utm_medium"),
-        default_utm_campaign=data.get("default_utm_campaign"),
-        auto_create_contact=data.get("auto_create_contact", True),
-        auto_create_company=data.get("auto_create_company", True),
-        default_lead_status=data.get("default_lead_status", "new"),
-        default_owner_id=data.get("default_owner_id"),
-        deduplication_fields=data.get("deduplication_fields", ["email"]),
-        icon=data.get("icon"),
-        color=data.get("color"),
-        is_active=data.get("is_active", True),
-        sort_order=data.get("sort_order", 0),
-        custom_fields=data.get("custom_fields", {}),
-    )
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-
-    return {"id": str(source.id), "message": "Lead source created"}
-
-
-@router.get("/lead-sources", response_model=List[dict])
-async def list_lead_sources(
-    current_user: tuple = Depends(require_integrations_read),
-    db: AsyncSession = Depends(get_db),
-    tenant_id: UUID = Depends(get_tenant_id),
-):
-    """List lead source configurations."""
-    result = await db.execute(
-        select(LeadSourceConfig)
-        .where(LeadSourceConfig.tenant_id == tenant_id)
-        .order_by(LeadSourceConfig.sort_order, LeadSourceConfig.display_name)
-    )
-    sources = result.scalars().all()
-
-    return [{
-        "id": str(s.id),
-        "source_key": s.source_key,
-        "display_name": s.display_name,
-        "description": s.description,
-        "source_type": s.source_type.value,
-        "default_utm_source": s.default_utm_source,
-        "default_utm_medium": s.default_utm_medium,
-        "default_utm_campaign": s.default_utm_campaign,
-        "auto_create_contact": s.auto_create_contact,
-        "auto_create_company": s.auto_create_company,
-        "default_lead_status": s.default_lead_status,
-        "deduplication_fields": s.deduplication_fields,
-        "icon": s.icon,
-        "color": s.color,
-        "is_active": s.is_active,
-        "sort_order": s.sort_order,
-    } for s in sources]
-
-
-@router.patch("/lead-sources/{source_id}", response_model=dict)
-async def update_lead_source(
-    source_id: UUID,
-    data: dict,
-    current_user: tuple = Depends(require_integrations_write),
-    db: AsyncSession = Depends(get_db),
-    tenant_id: UUID = Depends(get_tenant_id),
-):
-    """Update lead source configuration."""
-    result = await db.execute(
-        select(LeadSourceConfig).where(
-            LeadSourceConfig.id == source_id,
-            LeadSourceConfig.tenant_id == tenant_id,
-        )
-    )
-    source = result.scalar_one_or_none()
-    if not source:
-        raise HTTPException(status_code=404, detail="Lead source not found")
-
-    update_data = data.copy()
-    update_data.pop("id", None)
-    update_data.pop("tenant_id", None)
-    update_data.pop("created_at", None)
-
-    for field, value in update_data.items():
-        if field in ['config', 'custom_fields', 'description', 'field_mappings', 'is_active', 'name']:
-            setattr(source, field, value)
-
-    source.updated_at = datetime.now(timezone.utc)
-    await db.commit()
-    return {"id": str(source.id), "message": "Lead source updated"}
-
-
-@router.delete("/lead-sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_lead_source(
-    source_id: UUID,
-    current_user: tuple = Depends(require_integrations_write),
-    db: AsyncSession = Depends(get_db),
-    tenant_id: UUID = Depends(get_tenant_id),
-):
-    """Delete lead source configuration."""
-    result = await db.execute(
-        select(LeadSourceConfig).where(
-            LeadSourceConfig.id == source_id,
-            LeadSourceConfig.tenant_id == tenant_id,
-        )
-    )
-    source = result.scalar_one_or_none()
-    if not source:
-        raise HTTPException(status_code=404, detail="Lead source not found")
-
-    await db.delete(source)
-    await db.commit()
-
 
 # =============================================================================
 # Attribution

@@ -3545,6 +3545,80 @@
         }
       }
     },
+    "/api/v1/auth/google/start": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Google Start",
+        "operationId": "google_start_api_v1_auth_google_start_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/google/callback": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Google Callback",
+        "operationId": "google_callback_api_v1_auth_google_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 20,
+              "maxLength": 128,
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/google": {
       "post": {
         "tags": [
@@ -3800,6 +3874,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "format": "uuid",
               "title": "Tenant Id"
             }
           },
@@ -4184,7 +4259,7 @@
           "Tenants"
         ],
         "summary": "Delete Tenant",
-        "description": "Delete tenant (admin only).",
+        "description": "Reject hard deletion while workspace audit retention is required.",
         "operationId": "delete_tenant_api_v1_tenants__tenant_id__delete",
         "parameters": [
           {
@@ -4491,7 +4566,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/RoleEnum"
                 },
                 {
                   "type": "null"
@@ -5821,7 +5896,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/LeadStatusEnum"
                 },
                 {
                   "type": "null"
@@ -5854,7 +5929,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/LeadSourceEnum"
                 },
                 {
                   "type": "null"
@@ -6459,7 +6534,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/PendingLeadStatusEnum"
                 },
                 {
                   "type": "null"
@@ -6542,7 +6617,6 @@
           "Leads - Firecrawl"
         ],
         "summary": "Approve Reject Lead",
-        "description": "Approve or reject a lead from external source (Firecrawl, etc.).\nIf approved, creates Contact/Lead in CRM and updates PendingLead.",
         "operationId": "approve_reject_lead_api_v1_leads_firecrawl_approve_post",
         "parameters": [
           {
@@ -6602,7 +6676,6 @@
           "Leads - Firecrawl"
         ],
         "summary": "Bulk Approve Leads",
-        "description": "Bulk approve or reject multiple pending leads.",
         "operationId": "bulk_approve_leads_api_v1_leads_firecrawl_bulk_approve_post",
         "parameters": [
           {
@@ -7887,7 +7960,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/TaskStatusEnum"
                 },
                 {
                   "type": "null"
@@ -10698,6 +10771,244 @@
         }
       }
     },
+    "/api/v1/integrations/lead-sources": {
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Create Lead Source",
+        "description": "Create lead source configuration.",
+        "operationId": "create_lead_source_api_v1_integrations_lead_sources_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadSourceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Lead Source Api V1 Integrations Lead Sources Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "List Lead Sources",
+        "description": "List lead source configurations.",
+        "operationId": "list_lead_sources_api_v1_integrations_lead_sources_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Lead Sources Api V1 Integrations Lead Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/lead-sources/{source_id}": {
+      "patch": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Update Lead Source",
+        "description": "Update lead source configuration.",
+        "operationId": "update_lead_source_api_v1_integrations_lead_sources__source_id__patch",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadSourcePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Lead Source Api V1 Integrations Lead Sources  Source Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "Delete Lead Source",
+        "description": "Delete lead source configuration.",
+        "operationId": "delete_lead_source_api_v1_integrations_lead_sources__source_id__delete",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/integrations/{integration_id}": {
       "get": {
         "tags": [
@@ -11586,248 +11897,6 @@
               "type": "string",
               "format": "uuid",
               "title": "Webhook Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/integrations/lead-sources": {
-      "post": {
-        "tags": [
-          "Integrations"
-        ],
-        "summary": "Create Lead Source",
-        "description": "Create lead source configuration.",
-        "operationId": "create_lead_source_api_v1_integrations_lead_sources_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Data"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Create Lead Source Api V1 Integrations Lead Sources Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "Integrations"
-        ],
-        "summary": "List Lead Sources",
-        "description": "List lead source configurations.",
-        "operationId": "list_lead_sources_api_v1_integrations_lead_sources_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": true
-                  },
-                  "title": "Response List Lead Sources Api V1 Integrations Lead Sources Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/integrations/lead-sources/{source_id}": {
-      "patch": {
-        "tags": [
-          "Integrations"
-        ],
-        "summary": "Update Lead Source",
-        "description": "Update lead source configuration.",
-        "operationId": "update_lead_source_api_v1_integrations_lead_sources__source_id__patch",
-        "parameters": [
-          {
-            "name": "source_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Source Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Data"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Update Lead Source Api V1 Integrations Lead Sources  Source Id  Patch"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Integrations"
-        ],
-        "summary": "Delete Lead Source",
-        "description": "Delete lead source configuration.",
-        "operationId": "delete_lead_source_api_v1_integrations_lead_sources__source_id__delete",
-        "parameters": [
-          {
-            "name": "source_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Source Id"
             }
           },
           {
@@ -16295,6 +16364,8 @@
               "format": "uuid"
             },
             "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
             "title": "Lead Ids"
           },
           "action": {
@@ -20082,12 +20153,22 @@
         "properties": {
           "code": {
             "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
             "title": "Code"
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "State"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "code"
+          "code",
+          "state"
         ],
         "title": "GoogleAuthRequest"
       },
@@ -20142,6 +20223,30 @@
           "timestamp"
         ],
         "title": "HealthResponse"
+      },
+      "IntegrationTypeEnum": {
+        "type": "string",
+        "enum": [
+          "meta",
+          "google_ads",
+          "linkedin",
+          "apollo",
+          "whatsapp",
+          "csv",
+          "webhook",
+          "email_inbox",
+          "website_form",
+          "website_chatbot",
+          "ai_lead_miner",
+          "firecrawl",
+          "appointments",
+          "referral",
+          "partner",
+          "api",
+          "other"
+        ],
+        "title": "IntegrationTypeEnum",
+        "description": "Integration types per blueprint lead sources."
       },
       "JobResponse": {
         "properties": {
@@ -20292,13 +20397,14 @@
           "utm_source": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LeadSourceEnum",
+                "type": "string",
                 "maxLength": 100
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Utm Source"
           },
           "utm_medium": {
             "anyOf": [
@@ -20479,13 +20585,14 @@
           "utm_source": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LeadSourceEnum",
+                "type": "string",
                 "maxLength": 100
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Utm Source"
           },
           "utm_medium": {
             "anyOf": [
@@ -20864,6 +20971,306 @@
         "title": "LeadSourceEnum",
         "description": "Lead source types per blueprint."
       },
+      "LeadSourceInput": {
+        "properties": {
+          "source_key": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Source Key"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/IntegrationTypeEnum"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_utm_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Source"
+          },
+          "default_utm_medium": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Medium"
+          },
+          "default_utm_campaign": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Campaign"
+          },
+          "auto_create_contact": {
+            "type": "boolean",
+            "title": "Auto Create Contact",
+            "default": true
+          },
+          "auto_create_company": {
+            "type": "boolean",
+            "title": "Auto Create Company",
+            "default": true
+          },
+          "default_lead_status": {
+            "$ref": "#/components/schemas/LeadStatusEnum",
+            "default": "new"
+          },
+          "default_owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Owner Id"
+          },
+          "deduplication_fields": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "phone"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Deduplication Fields"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_key",
+          "display_name",
+          "source_type"
+        ],
+        "title": "LeadSourceInput"
+      },
+      "LeadSourcePatch": {
+        "properties": {
+          "source_key": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Source Key"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/IntegrationTypeEnum"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_utm_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Source"
+          },
+          "default_utm_medium": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Medium"
+          },
+          "default_utm_campaign": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Utm Campaign"
+          },
+          "auto_create_contact": {
+            "type": "boolean",
+            "title": "Auto Create Contact"
+          },
+          "auto_create_company": {
+            "type": "boolean",
+            "title": "Auto Create Company"
+          },
+          "default_lead_status": {
+            "$ref": "#/components/schemas/LeadStatusEnum"
+          },
+          "default_owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Owner Id"
+          },
+          "deduplication_fields": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "phone"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Deduplication Fields"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LeadSourcePatch"
+      },
       "LeadStatusEnum": {
         "type": "string",
         "enum": [
@@ -20975,13 +21382,14 @@
           "utm_source": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LeadSourceEnum",
+                "type": "string",
                 "maxLength": 100
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Utm Source"
           },
           "utm_medium": {
             "anyOf": [
@@ -22069,6 +22477,17 @@
         "title": "PendingLeadReview",
         "description": "Lead pending review from external source."
       },
+      "PendingLeadStatusEnum": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "needs_review"
+        ],
+        "title": "PendingLeadStatusEnum",
+        "description": "Pending lead approval status."
+      },
       "PipelineCreate": {
         "properties": {
           "name": {
@@ -22260,6 +22679,20 @@
           "instructions"
         ],
         "title": "RegenerateProposalSectionRequest"
+      },
+      "RoleEnum": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "admin",
+          "sales_manager",
+          "sales_executive",
+          "marketing",
+          "viewer",
+          "ai_agent"
+        ],
+        "title": "RoleEnum",
+        "description": "System roles per blueprint."
       },
       "RunLeadMinerRequest": {
         "properties": {

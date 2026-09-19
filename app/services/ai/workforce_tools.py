@@ -146,9 +146,9 @@ async def validate_ownership(db, tenant_id, actor_id, name, arguments):
     }
     for field, model in models.items():
         if arguments.get(field):
-            await owned(db, model, tenant_id, UUID(arguments[field]))
+            await owned(db, model, tenant_id, UUID(arguments[field]), actor_id=actor_id)
     if name == "update_lead":
-        await owned(db, Lead, tenant_id, UUID(arguments["entity_id"]))
+        await owned(db, Lead, tenant_id, UUID(arguments["entity_id"]), actor_id=actor_id)
     await relations(
         db,
         tenant_id,
@@ -281,13 +281,13 @@ async def execute_tool(
         from app.core.search import PostgresSearch
 
         result = {
-            "items": await PostgresSearch(db).search(
+            "items": await PostgresSearch(db, actor_id).search(
                 tenant_id, "leads" if name == "search_leads" else "contacts", arguments["query"], 20
             )
         }
     elif name in {"get_lead", "get_deal"}:
         model, field = (Lead, "lead_id") if name == "get_lead" else (Deal, "deal_id")
-        row = await owned(db, model, tenant_id, UUID(arguments[field]))
+        row = await owned(db, model, tenant_id, UUID(arguments[field]), actor_id=actor_id)
         result = {
             k: str(getattr(row, k))
             if k.endswith("_id")
@@ -359,7 +359,7 @@ async def execute_tool(
         await db.flush()
         result = {"id": str(row.id)}
     elif name == "update_task":
-        row = await owned(db, Task, tenant_id, UUID(arguments["task_id"]), True)
+        row = await owned(db, Task, tenant_id, UUID(arguments["task_id"]), True, actor_id=actor_id)
         from app.schemas import TaskUpdate as Schema
 
         values = Schema.model_validate(

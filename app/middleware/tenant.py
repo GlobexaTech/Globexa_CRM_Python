@@ -35,6 +35,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/google",
+        "/api/v1/auth/google/start",
+        "/api/v1/auth/google/callback",
         "/api/v1/auth/refresh",
         "/api/v1/unsubscribe",
     }

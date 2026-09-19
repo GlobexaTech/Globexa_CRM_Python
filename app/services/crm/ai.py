@@ -43,7 +43,7 @@ async def request_ai(db, tenant_id, actor_id, capability, entity_id, key):
             Campaign: "campaigns:read",
         }[model],
     )
-    await owned(db, model, tenant_id, entity_id)
+    await owned(db, model, tenant_id, entity_id, actor_id=actor_id)
     job, created = await enqueue(
         db,
         tenant_id,
@@ -88,7 +88,7 @@ async def execute_ai(db, tenant_id, job, gateway=None):
             Campaign: "campaigns:read",
         }[model],
     )
-    entity = await owned(db, model, tenant_id, UUID(job.payload["entity_id"]))
+    entity = await owned(db, model, tenant_id, UUID(job.payload["entity_id"]), actor_id=job.actor_id)
     facts = {
         key: getattr(entity, key)
         for key in ("title", "description", "body", "name", "ai_score", "value")

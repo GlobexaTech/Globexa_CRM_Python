@@ -28,7 +28,7 @@ async def execute_tool(db, tenant_id, actor_id, name, arguments, key):
         if set(arguments) != {"query"}:
             raise HTTPException(422, "Tool requires query")
         return {
-            "items": await PostgresSearch(db).search(
+            "items": await PostgresSearch(db, actor_id).search(
                 tenant_id, "leads", str(arguments["query"]), 20
             )
         }

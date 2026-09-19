@@ -102,7 +102,7 @@ async def validate_context(db, tenant_id, actor_id, context):
             "campaign": (Campaign, "campaigns:read"),
         }[context.entity_type]
         await authorize(db, tenant_id, actor_id, permission)
-        await owned(db, model, tenant_id, context.entity_id)
+        await owned(db, model, tenant_id, context.entity_id, actor_id=actor_id)
     for url in context.research_urls:
         from app.services.ai.research import validate_url
 

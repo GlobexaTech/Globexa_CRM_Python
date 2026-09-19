@@ -1,3 +1,6 @@
+from app.services.crm.common import owned
+from app.services.crm.deal_state import apply_stage
+from app.core.record_access import record_scope
 """
 Deals API routes for Globexa CRM.
 """
@@ -27,7 +30,7 @@ from app.schemas import (
     PaginationParams,
     PaginatedResponse,
 )
-from app.models import Deal, Pipeline, Stage, Contact, Company, User
+from app.models import Deal, Pipeline, Stage, Contact, Company, User, Lead
 
 router = APIRouter(prefix="/deals", tags=["Deals"])
 require_pipeline_manage = require_permission(Permission.DEALS_PIPELINE_MANAGE)
@@ -361,6 +364,7 @@ async def create_deal(
     
     # Verify lead if provided
     if data.lead_id:
+        await owned(db, Lead, tenant_id, data.lead_id)
         result = await db.execute(
             select(Deal).where(Deal.lead_id == data.lead_id)
         )
@@ -387,6 +391,7 @@ async def create_deal(
         created_by_id=user.id,
         updated_by_id=user.id,
     )
+    apply_stage(deal, stage)
     db.add(deal)
     await db.commit()
     await db.refresh(deal)
@@ -407,7 +412,7 @@ async def list_deals(
     """List deals with filtering and pagination."""
     user, membership = current_user
     
-    query = select(Deal).where(Deal.tenant_id == tenant_id).options(
+    query = select(Deal).where(Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id)).options(
         selectinload(Deal.owner),
         selectinload(Deal.contact).selectinload(Contact.company),
         selectinload(Deal.company),
@@ -460,7 +465,7 @@ async def get_deal(
     """Get a deal by ID."""
     user, membership = current_user
     
-    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id).options(
+    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id)).options(
         selectinload(Deal.owner),
         selectinload(Deal.contact).selectinload(Contact.company),
         selectinload(Deal.company),
@@ -490,7 +495,7 @@ async def update_deal(
     """Update a deal."""
     user, membership = current_user
     
-    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id)
+    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id))
     
     if membership.role.value == "sales_executive":
         query = query.where(Deal.owner_id == user.id)
@@ -510,18 +515,13 @@ async def update_deal(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Pipeline not found")
     
-    if "stage_id" in update_data:
-        result = await db.execute(
-            select(Stage).where(Stage.id == update_data["stage_id"])
-        )
-        stage = result.scalar_one_or_none()
-        if not stage:
-            raise HTTPException(status_code=404, detail="Stage not found")
-        if "pipeline_id" in update_data and stage.pipeline_id != update_data["pipeline_id"]:
-            raise HTTPException(status_code=400, detail="Stage does not belong to the specified pipeline")
-        elif "pipeline_id" not in update_data and stage.pipeline_id != deal.pipeline_id:
-            raise HTTPException(status_code=400, detail="Stage does not belong to the deal's pipeline")
-    
+    if "stage_id" in update_data or "pipeline_id" in update_data:
+        stage = await owned(db, Stage, tenant_id, update_data.get("stage_id", deal.stage_id))
+        if stage.pipeline_id != update_data.get("pipeline_id", deal.pipeline_id):
+            raise HTTPException(422, "Stage does not belong to the specified pipeline")
+    if update_data.get("lead_id"):
+        await owned(db, Lead, tenant_id, update_data["lead_id"])
+
     if "contact_id" in update_data and update_data["contact_id"]:
         result = await db.execute(
             select(Contact).where(Contact.id == update_data["contact_id"], Contact.tenant_id == tenant_id)
@@ -544,17 +544,13 @@ async def update_deal(
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Owner not found in this tenant")
     
-    # Update weighted value if value or stage changed
-    if "value" in update_data or "stage_id" in update_data:
-        value = update_data.get("value", deal.value)
-        stage_id = update_data.get("stage_id", deal.stage_id)
-        stage = await db.get(Stage, stage_id)
-        if stage:
-            deal.weighted_value = int(value * stage.probability / 100)
-    
     for field, value in update_data.items():
         setattr(deal, field, value)
-    
+    if "stage_id" in update_data or "pipeline_id" in update_data:
+        apply_stage(deal, stage)
+    elif "value" in update_data or "probability" in update_data:
+        deal.weighted_value = int(deal.value * deal.probability / 100)
+
     deal.updated_by_id = user.id
     await db.commit()
     await db.refresh(deal)
@@ -564,14 +560,14 @@ async def update_deal(
 @router.delete("/{deal_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_deal(
     deal_id: UUID,
-    current_user: tuple = Depends(require_deals_write),
+    current_user: tuple = Depends(require_permission("deals:delete")),
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Delete a deal."""
     user, membership = current_user
     
-    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id)
+    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id))
     
     if membership.role.value == "sales_executive":
         query = query.where(Deal.owner_id == user.id)
@@ -598,7 +594,7 @@ async def move_deal(
     from datetime import datetime, timezone
     user, membership = current_user
     
-    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id)
+    query = select(Deal).where(Deal.id == deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id))
     
     if membership.role.value == "sales_executive":
         query = query.where(Deal.owner_id == user.id)
@@ -616,16 +612,9 @@ async def move_deal(
     if not stage:
         raise HTTPException(status_code=404, detail="Stage not found in this pipeline")
     
-    old_stage_id = deal.stage_id
-    deal.stage_id = stage_id
-    deal.probability = stage.probability
-    deal.weighted_value = int(deal.value * stage.probability / 100)
+    apply_stage(deal, stage)
     deal.updated_by_id = user.id
-    
-    # If moved to closed won/lost, set actual close date
-    if stage.is_closed and not deal.actual_close_date:
-        deal.actual_close_date = datetime.now(timezone.utc)
-    
+
     await db.commit()
     await db.refresh(deal)
     return scalar_response(DealResponse, deal)

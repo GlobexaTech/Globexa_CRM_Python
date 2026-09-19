@@ -44,7 +44,7 @@ class AuthService:
                     client_id=settings.google_oauth.client_id,
                     client_secret=settings.google_oauth.client_secret,
                     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-                    client_kwargs={"scope": " ".join(settings.google_oauth.scopes)},
+                    client_kwargs={"scope": "openid email profile", "code_challenge_method": "S256", "timeout": 10},
                 )
         return self._oauth
 
@@ -161,26 +161,40 @@ class AuthService:
 
         return user
 
-    async def google_login(self, code: str) -> Tuple[Optional[User], Optional[Tenant]]:
-        """Handle Google OAuth callback."""
+    async def google_login_start(self):
         if not settings.google_oauth.configured:
             raise ValueError("Google OAuth not configured")
+        from app.services.auth.google_state import begin
+        state, binding, nonce, verifier = await begin()
+        try:
+            result = await self.oauth.google.create_authorization_url(
+                redirect_uri=settings.google_oauth.redirect_uri,
+                state=state, nonce=nonce, code_verifier=verifier,
+            )
+        except (httpx.HTTPError, ValueError, RuntimeError):
+            raise ValueError("Google authorization is unavailable") from None
+        return result["url"], binding
 
-        # Exchange code for token
-        token = await self.oauth.google.authorize_access_token(
-            redirect_uri=settings.google_oauth.redirect_uri,
-            code=code,
-        )
-
-        # Get user info from Google
-        userinfo = token.get("userinfo")
-        if not userinfo:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {token['access_token']}"},
-                )
-                userinfo = resp.json()
+    async def google_login(self, code: str, state: str = "", binding: str = "") -> Tuple[Optional[User], Optional[Tenant]]:
+        """Exchange a browser-bound code and validate the signed OIDC identity."""
+        if not settings.google_oauth.configured:
+            raise ValueError("Google OAuth not configured")
+        from app.services.auth.google_state import consume
+        from authlib.common.errors import AuthlibBaseError
+        from joserfc.errors import JoseError
+        login = await consume(state, binding)
+        try:
+            token = await self.oauth.google.fetch_access_token(
+                redirect_uri=settings.google_oauth.redirect_uri,
+                code=code, code_verifier=login["verifier"],
+            )
+            if not token.get("id_token"):
+                raise ValueError("Missing signed identity")
+            userinfo = await self.oauth.google.parse_id_token(token, nonce=login["nonce"], leeway=30)
+            if userinfo.get("nonce") != login["nonce"] or userinfo.get("email_verified") is not True:
+                raise ValueError("Unverified identity")
+        except (AuthlibBaseError, JoseError, httpx.HTTPError, ValueError, KeyError, TypeError):
+            raise ValueError("Google identity verification failed") from None
 
         google_id = userinfo.get("sub")
         email = userinfo.get("email")
@@ -194,37 +208,18 @@ class AuthService:
             text("SELECT * FROM public.auth_lookup_user(:email)")).params(email=email))
         user = result.scalar_one_or_none()
         if user:
+            if not user.is_active or (user.google_id and user.google_id != google_id):
+                raise ValueError("Google authentication failed")
             await bind_context(self.db, user_id=user.id)
             await self.db.refresh(user, ["memberships"])
-        if user:
-            # Update avatar if changed
-            if avatar_url and user.avatar_url != avatar_url:
-                user.avatar_url = avatar_url
-            user.last_login_at = datetime.now(timezone.utc)
-            await self.db.commit()
-            # Get default tenant
-            default_membership = next((m for m in user.memberships if m.is_default), user.memberships[0] if user.memberships else None)
-            tenant = default_membership.tenant if default_membership else None
-            return user, tenant
-
-        # Find by email (might be existing account without Google)
-        result = await self.db.execute(
-            select(User)
-            .where(User.email == email)
-            .options(selectinload(User.memberships).selectinload(Membership.tenant))
-        )
-        user = result.scalar_one_or_none()
-
-        if user:
-            # Link Google account
             user.google_id = google_id
-            if avatar_url and not user.avatar_url:
-                user.avatar_url = avatar_url
             user.email_verified = True
+            if avatar_url:
+                user.avatar_url = avatar_url
             user.last_login_at = datetime.now(timezone.utc)
             await self.db.commit()
             default_membership = next((m for m in user.memberships if m.is_default), user.memberships[0] if user.memberships else None)
-            tenant = default_membership.tenant if default_membership else None
+            tenant = await self.db.get(Tenant, default_membership.tenant_id) if default_membership else None
             return user, tenant
 
         # Create new user via Google
@@ -247,10 +242,8 @@ class AuthService:
         base_slug = tenant_slug
         counter = 1
         while True:
-            existing_tenant = await self.db.execute(
-                select(Tenant).where(Tenant.slug == tenant_slug)
-            )
-            if not existing_tenant.scalar_one_or_none():
+            exists = await self.db.scalar(text("SELECT public.tenant_slug_exists(:slug)"), {"slug": tenant_slug})
+            if not exists:
                 break
             tenant_slug = f"{base_slug}-{counter}"
             counter += 1
@@ -302,6 +295,8 @@ class AuthService:
     async def create_tokens(self, user: User, tenant_id: UUID, *, session_id=None, session_expiry=None) -> dict:
         """Create access and refresh tokens for user in a tenant."""
         await bind_context(self.db, user_id=user.id)
+        if not user.is_active:
+            raise ValueError("User is inactive")
         # Verify membership
         result = await self.db.execute(
             select(Membership).join(Tenant, Tenant.id == Membership.tenant_id).where(

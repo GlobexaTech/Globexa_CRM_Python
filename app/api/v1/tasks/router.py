@@ -1,3 +1,5 @@
+from app.core.record_access import record_scope
+from app.services.crm.automation import relations
 """
 Tasks, Notes, Activities API routes for Globexa CRM.
 """
@@ -45,12 +47,12 @@ async def create_task(
     
     # Verify relations
     if data.lead_id:
-        result = await db.execute(select(Lead).where(Lead.id == data.lead_id, Lead.tenant_id == tenant_id))
+        result = await db.execute(select(Lead).where(Lead.id == data.lead_id, Lead.tenant_id == tenant_id, await record_scope(db, Lead, tenant_id)))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Lead not found")
     
     if data.deal_id:
-        result = await db.execute(select(Deal).where(Deal.id == data.deal_id, Deal.tenant_id == tenant_id))
+        result = await db.execute(select(Deal).where(Deal.id == data.deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id)))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Deal not found")
     
@@ -86,7 +88,7 @@ async def create_task(
 @tasks_router.get("", response_model=PaginatedResponse)
 async def list_tasks(
     params: PaginationParams = Depends(),
-    status: Optional[str] = Query(None),
+    status: Optional[TaskStatusEnum] = Query(None),
     owner_id: Optional[UUID] = Query(None),
     lead_id: Optional[UUID] = Query(None),
     deal_id: Optional[UUID] = Query(None),
@@ -98,7 +100,7 @@ async def list_tasks(
     """List tasks with filtering."""
     user, membership = current_user
     
-    query = select(Task).where(Task.tenant_id == tenant_id).options(
+    query = select(Task).where(Task.tenant_id == tenant_id, await record_scope(db, Task, tenant_id)).options(
         selectinload(Task.owner),
         selectinload(Task.lead),
         selectinload(Task.deal),
@@ -150,7 +152,7 @@ async def get_task(
     """Get a task by ID."""
     user, membership = current_user
     
-    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id).options(
+    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id, await record_scope(db, Task, tenant_id)).options(
         selectinload(Task.owner),
         selectinload(Task.lead),
         selectinload(Task.deal),
@@ -177,7 +179,7 @@ async def update_task(
     """Update a task."""
     user, membership = current_user
     
-    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id)
+    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id, await record_scope(db, Task, tenant_id))
     
     if membership.role.value == "sales_executive":
         query = query.where(Task.owner_id == user.id)
@@ -188,6 +190,9 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     update_data = data.model_dump(exclude_unset=True)
+    await relations(db, tenant_id, update_data)
+    if not any(update_data.get(key, getattr(task, key)) for key in ("lead_id", "deal_id", "contact_id", "company_id")):
+        raise HTTPException(422, "A customer relation is required")
     
     # Handle completion
     if "status" in update_data and update_data["status"] == TaskStatusEnum.COMPLETED:
@@ -222,7 +227,7 @@ async def delete_task(
     """Delete a task."""
     user, membership = current_user
     
-    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id)
+    query = select(Task).where(Task.id == task_id, Task.tenant_id == tenant_id, await record_scope(db, Task, tenant_id))
     
     if membership.role.value == "sales_executive":
         query = query.where(Task.owner_id == user.id)
@@ -256,12 +261,12 @@ async def create_note(
     
     # Verify relations
     if data.lead_id:
-        result = await db.execute(select(Lead).where(Lead.id == data.lead_id, Lead.tenant_id == tenant_id))
+        result = await db.execute(select(Lead).where(Lead.id == data.lead_id, Lead.tenant_id == tenant_id, await record_scope(db, Lead, tenant_id)))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Lead not found")
     
     if data.deal_id:
-        result = await db.execute(select(Deal).where(Deal.id == data.deal_id, Deal.tenant_id == tenant_id))
+        result = await db.execute(select(Deal).where(Deal.id == data.deal_id, Deal.tenant_id == tenant_id, await record_scope(db, Deal, tenant_id)))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Deal not found")
     
@@ -299,7 +304,7 @@ async def list_notes(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """List notes with filtering."""
-    query = select(Note).where(Note.tenant_id == tenant_id).options(selectinload(Note.author))
+    query = select(Note).where(Note.tenant_id == tenant_id, await record_scope(db, Note, tenant_id)).options(selectinload(Note.author))
     
     if lead_id:
         query = query.where(Note.lead_id == lead_id)
@@ -337,7 +342,7 @@ async def get_note(
     """Get a note by ID."""
     result = await db.execute(
         select(Note)
-        .where(Note.id == note_id, Note.tenant_id == tenant_id)
+        .where(Note.id == note_id, Note.tenant_id == tenant_id, await record_scope(db, Note, tenant_id))
         .options(selectinload(Note.author))
     )
     note = result.scalar_one_or_none()
@@ -359,7 +364,7 @@ async def update_note(
     user, membership = current_user
     
     result = await db.execute(
-        select(Note).where(Note.id == note_id, Note.tenant_id == tenant_id)
+        select(Note).where(Note.id == note_id, Note.tenant_id == tenant_id, await record_scope(db, Note, tenant_id))
     )
     note = result.scalar_one_or_none()
     if not note:
@@ -390,7 +395,7 @@ async def delete_note(
     user, membership = current_user
     
     result = await db.execute(
-        select(Note).where(Note.id == note_id, Note.tenant_id == tenant_id)
+        select(Note).where(Note.id == note_id, Note.tenant_id == tenant_id, await record_scope(db, Note, tenant_id))
     )
     note = result.scalar_one_or_none()
     if not note:
@@ -422,7 +427,7 @@ async def list_activities(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """List activities (timeline) with filtering."""
-    query = select(Activity).where(Activity.tenant_id == tenant_id).options(selectinload(Activity.user))
+    query = select(Activity).where(Activity.tenant_id == tenant_id, await record_scope(db, Activity, tenant_id)).options(selectinload(Activity.user))
     
     if lead_id:
         query = query.where(Activity.lead_id == lead_id)
