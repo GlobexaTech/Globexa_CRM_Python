@@ -526,7 +526,8 @@ async def test_task_create_completed_and_relation_patch(client, crm):
     assert unlinked.status_code == 422, unlinked.text
 
 
-async def test_membership_writer_reloads_a_revoked_actor(db_session, crm):
+@pytest.mark.parametrize('revoked_role', [RoleEnum.VIEWER, RoleEnum.SALES_MANAGER])
+async def test_membership_writer_reloads_a_revoked_actor(db_session, crm, revoked_role):
     from sqlalchemy import update
     from fastapi import HTTPException
     from app.models import User
@@ -541,7 +542,7 @@ async def test_membership_writer_reloads_a_revoked_actor(db_session, crm):
     await db_session.execute(
         update(Membership)
         .where(Membership.id == member.id)
-        .values(role=RoleEnum.VIEWER)
+        .values(role=revoked_role)
         .execution_options(synchronize_session=False)
     )
     assert member.role == RoleEnum.OWNER  # An earlier authentication dependency is stale.

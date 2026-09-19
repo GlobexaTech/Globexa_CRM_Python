@@ -37,7 +37,7 @@ def check_assignment(current_user, role):
     return target
 
 
-async def membership_writer(db, tenant_id, current_user):
+async def membership_writer(db, tenant_id, current_user, minimum_role=RoleEnum.ADMIN):
     from app.services.crm.common import serial_key
     from app.core.rbac import ROLE_HIERARCHY
     await serial_key(db, tenant_id, "membership-administration")
@@ -45,7 +45,7 @@ async def membership_writer(db, tenant_id, current_user):
         Membership.tenant_id == tenant_id, Membership.user_id == current_user[0].id,
         User.is_active.is_(True),
     ).execution_options(populate_existing=True))
-    if not member or ROLE_HIERARCHY.get(member.role, 0) < ROLE_HIERARCHY[RoleEnum.SALES_MANAGER]:
+    if not member or ROLE_HIERARCHY.get(member.role, 0) < ROLE_HIERARCHY[minimum_role]:
         raise HTTPException(403, "Membership administration permission required")
     return current_user[0], member
 
@@ -61,7 +61,7 @@ async def create_user(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Create a new user in the current tenant."""
-    current_user = await membership_writer(db, tenant_id, current_user)
+    current_user = await membership_writer(db, tenant_id, current_user, RoleEnum.SALES_MANAGER)
     check_assignment(current_user, data.role)
     from app.services.crm.common import meter
     await meter(db, tenant_id, current_user[0].id, "users")
@@ -220,7 +220,7 @@ async def delete_user(
     tenant_id: UUID = Depends(get_tenant_id),
 ):
     """Remove a user from the current tenant (soft delete - removes membership)."""
-    current_user = await membership_writer(db, tenant_id, current_user)
+    current_user = await membership_writer(db, tenant_id, current_user, RoleEnum.SALES_MANAGER)
     current_user_obj, current_membership = current_user
 
     if user_id == current_user_obj.id:
