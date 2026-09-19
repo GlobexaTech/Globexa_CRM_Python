@@ -106,7 +106,8 @@ class UserCreate(BaseModel):
     role: str = "sales_executive"
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(EntityPatch):
+    non_nullable = {'full_name', 'timezone', 'locale'}
     model_config = ConfigDict(extra="forbid")
     full_name: Optional[str] = Field(None, min_length=1, max_length=255)
     avatar_url: Optional[str] = None
@@ -141,7 +142,8 @@ class TenantCreate(TenantBase):
     pass
 
 
-class TenantUpdate(BaseModel):
+class TenantUpdate(EntityPatch):
+    non_nullable = {'name', 'settings', 'is_active'}
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     domain: Optional[str] = Field(None, max_length=255)
     logo_url: Optional[str] = None
@@ -175,7 +177,8 @@ class MembershipCreate(BaseModel):
     is_default: bool = False
 
 
-class MembershipUpdate(BaseModel):
+class MembershipUpdate(EntityPatch):
+    non_nullable = {'role', 'is_default'}
     model_config = ConfigDict(extra="forbid")
     role: Optional[str] = None
     is_default: Optional[bool] = None
@@ -212,7 +215,8 @@ class SubscriptionCreate(BaseModel):
     billing_email: Optional[EmailStr] = None
 
 
-class SubscriptionUpdate(BaseModel):
+class SubscriptionUpdate(EntityPatch):
+    non_nullable = {'package', 'cancel_at_period_end'}
     package: Optional[str] = None
     billing_email: Optional[EmailStr] = None
     cancel_at_period_end: Optional[bool] = None
@@ -241,7 +245,8 @@ class FeatureEntitlementCreate(BaseModel):
     metadata: Dict[str, Any] = {}
 
 
-class FeatureEntitlementUpdate(BaseModel):
+class FeatureEntitlementUpdate(EntityPatch):
+    non_nullable = {'enabled', 'metadata'}
     enabled: Optional[bool] = None
     limit_value: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -417,7 +422,8 @@ class CompanyCreate(CompanyBase):
     pass
 
 
-class CompanyUpdate(BaseModel):
+class CompanyUpdate(EntityPatch):
+    non_nullable = {'name', 'custom_fields'}
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     domain: Optional[str] = Field(None, max_length=255)
     industry: Optional[str] = Field(None, max_length=100)
@@ -484,7 +490,8 @@ class ContactCreate(ContactBase):
     pass
 
 
-class ContactUpdate(BaseModel):
+class ContactUpdate(EntityPatch):
+    non_nullable = {'first_name', 'last_name', 'is_primary', 'do_not_contact', 'email_opted_out', 'sms_opted_out', 'custom_fields'}
     company_id: Optional[UUID] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -606,7 +613,8 @@ class PipelineCreate(PipelineBase):
     pass
 
 
-class PipelineUpdate(BaseModel):
+class PipelineUpdate(EntityPatch):
+    non_nullable = {'name', 'is_default', 'is_active'}
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     is_default: Optional[bool] = None
@@ -632,7 +640,8 @@ class StageCreate(StageBase):
     pass
 
 
-class StageUpdate(BaseModel):
+class StageUpdate(EntityPatch):
+    non_nullable = {'name', 'order', 'probability', 'is_closed', 'is_won'}
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     order: Optional[int] = None
     probability: Optional[int] = Field(None, ge=0, le=100)
@@ -761,7 +770,8 @@ class NoteCreate(NoteBase):
     pass
 
 
-class NoteUpdate(BaseModel):
+class NoteUpdate(EntityPatch):
+    non_nullable = {'content', 'is_pinned', 'custom_fields'}
     content: Optional[str] = Field(None, min_length=1)
     is_pinned: Optional[bool] = None
     custom_fields: Optional[Dict[str, Any]] = None
@@ -810,7 +820,8 @@ class ProposalCreate(ProposalBase):
     pass
 
 
-class ProposalUpdate(BaseModel):
+class ProposalUpdate(EntityPatch):
+    non_nullable = {'title', 'version', 'status'}
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     version: Optional[int] = None
     status: Optional[str] = None

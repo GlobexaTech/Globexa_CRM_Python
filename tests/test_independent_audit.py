@@ -617,3 +617,37 @@ async def test_workspace_deletion_preserves_retained_records(client, db_session,
     assert response.status_code == 409, response.text
     assert await db_session.get(Tenant, crm['tenant']) is not None
     assert await db_session.get(Contact, crm['contact'].id) is not None
+
+@pytest.mark.parametrize('resource,field', [('companies','name'), ('contacts','first_name')])
+async def test_required_customer_fields_reject_null_at_api(client, crm, resource, field):
+    identity = crm['company' if resource == 'companies' else 'contact'].id
+    response = await post(client, crm, f'/{resource}/{identity}', {field: None}, method='PATCH')
+    assert response.status_code == 422, response.text
+    persisted = await client.get(f'/api/v1/{resource}/{identity}', headers=crm['headers'])
+    assert persisted.status_code == 200 and persisted.json()[field] is not None
+
+
+def test_partial_updates_preserve_required_model_and_response_contracts():
+    from typing import get_args
+    from pydantic import ValidationError
+    import app.models as models
+    import app.schemas as schemas
+
+    for name in dir(schemas):
+        if not name.endswith('Update'):
+            continue
+        patch = getattr(schemas, name)
+        model = getattr(models, name[:-6], None)
+        base = getattr(schemas, name[:-6] + 'Base', None)
+        assert patch().model_dump(exclude_unset=True) == {}
+        for key in patch.model_fields:
+            column = getattr(getattr(model, '__table__', None), 'c', {}).get(key)
+            response_field = base.model_fields.get(key) if base else None
+            required = (column is not None and not column.nullable) or (
+                response_field is not None and type(None) not in get_args(response_field.annotation)
+            )
+            if required:
+                with pytest.raises(ValidationError):
+                    patch.model_validate({key: None})
+    assert schemas.ContactUpdate(phone=None).model_dump(exclude_unset=True) == {'phone': None}
+    assert schemas.LeadUpdate(owner_id=None).model_dump(exclude_unset=True) == {'owner_id': None}

@@ -17,7 +17,7 @@ except ImportError:  # Direct script execution from the CI checkout.
     from triage_history_secrets import triage
 
 ROOT = Path(__file__).resolve().parents[1]
-MIN_BACKEND = 433
+MIN_BACKEND = 436
 MIN_BROWSER = 74
 MIN_UNIT = 34
 REQUIRED_BACKEND_MODULES = {
